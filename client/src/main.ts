@@ -176,10 +176,38 @@ class Game {
       console.log('Toggling ready state');
     };
 
-    // Return to lobby clicked (not implemented in MVP)
-    this.ui.onReturnToLobbyClick = () => {
-      console.log('Return to lobby not implemented in MVP');
-      // In future: disconnect and rejoin
+    // Return to lobby clicked
+    this.ui.onReturnToLobbyClick = async () => {
+      console.log('Returning to lobby...');
+
+      // Disconnect from current room
+      if (this.room) {
+        await this.room.leave();
+        this.room = null;
+      }
+
+      // Clear session and state
+      this.sessionId = '';
+      this.currentTeam = 'RED';
+      this.isReady = false;
+
+      // Clear countdown interval if active
+      if (this.countdownInterval) {
+        clearInterval(this.countdownInterval);
+        this.countdownInterval = null;
+      }
+
+      // Dispose all meshes
+      this.playerMeshes.forEach((mesh) => mesh.dispose());
+      this.playerMeshes.clear();
+
+      this.projectileMeshes.forEach((mesh) => mesh.dispose());
+      this.projectileMeshes.clear();
+
+      // Show home screen
+      this.ui.showScreen('home');
+
+      console.log('✅ Returned to home screen');
     };
   }
 
