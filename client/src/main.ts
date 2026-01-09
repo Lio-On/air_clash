@@ -534,7 +534,7 @@ class Game {
    * Update all player mesh positions from server state
    */
   private updatePlayerMeshes(): void {
-    if (!this.room || !this.room.state) {
+    if (!this.room || !this.room.state || !this.room.state.players) {
       return;
     }
 
@@ -609,7 +609,7 @@ class Game {
    * Update all projectile meshes from server state
    */
   private updateProjectileMeshes(): void {
-    if (!this.room || !this.room.state) return;
+    if (!this.room || !this.room.state || !this.room.state.projectiles) return;
 
     // Update existing projectile meshes and create new ones
     this.room.state.projectiles.forEach((projectile: any, id: string) => {
