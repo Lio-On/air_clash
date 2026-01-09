@@ -16,6 +16,7 @@ class Game {
   private isReady: boolean = false;
   private countdownInterval: any = null;
   private playerMeshes: Map<string, Mesh> = new Map();
+  private projectileMeshes: Map<string, Mesh> = new Map();
 
   // Input state
   private inputState = {
@@ -23,7 +24,10 @@ class Game {
     down: false,    // S or Arrow Down
     left: false,    // A or Arrow Left
     right: false,   // D or Arrow Right
+    shoot: false,   // Space
   };
+  private lastShootTime: number = 0;
+  private shootCooldown: number = 250; // ms between shots (4 shots/second)
 
   constructor() {
     // Clear loading screen
@@ -73,10 +77,11 @@ class Game {
 
     // Run render loop
     this.engine.runRenderLoop(() => {
-      this.sendInput();          // Send keyboard input to server
-      this.updatePlayerMeshes(); // Update mesh positions from server
-      this.updateCamera();       // Update camera to follow local player
-      this.scene.render();       // Render the scene
+      this.sendInput();            // Send keyboard input to server
+      this.updatePlayerMeshes();   // Update player mesh positions from server
+      this.updateProjectileMeshes(); // Update projectile mesh positions from server
+      this.updateCamera();         // Update camera to follow local player
+      this.scene.render();         // Render the scene
     });
 
     // Handle window resize
@@ -189,6 +194,9 @@ class Game {
         case 'arrowright':
           this.inputState.right = true;
           break;
+        case ' ':
+          this.inputState.shoot = true;
+          break;
       }
     });
 
@@ -210,6 +218,9 @@ class Game {
         case 'd':
         case 'arrowright':
           this.inputState.right = false;
+          break;
+        case ' ':
+          this.inputState.shoot = false;
           break;
       }
     });
@@ -524,17 +535,24 @@ class Game {
       mesh.rotation.y = player.rotY;
       mesh.rotation.z = player.rotZ;
 
-      // Visual indicator for spawn protection
-      if (player.invulnerable) {
-        // Make mesh slightly transparent during invulnerability
-        const material = mesh.getChildMeshes()[0].material as StandardMaterial;
-        if (material) {
-          material.alpha = 0.7;
-        }
+      // Hide dead players
+      if (!player.alive) {
+        mesh.setEnabled(false);
       } else {
-        const material = mesh.getChildMeshes()[0].material as StandardMaterial;
-        if (material && material.alpha !== 1.0) {
-          material.alpha = 1.0;
+        mesh.setEnabled(true);
+
+        // Visual indicator for spawn protection
+        if (player.invulnerable) {
+          // Make mesh slightly transparent during invulnerability
+          const material = mesh.getChildMeshes()[0].material as StandardMaterial;
+          if (material) {
+            material.alpha = 0.7;
+          }
+        } else {
+          const material = mesh.getChildMeshes()[0].material as StandardMaterial;
+          if (material && material.alpha !== 1.0) {
+            material.alpha = 1.0;
+          }
         }
       }
     });
@@ -545,6 +563,48 @@ class Game {
         console.log(`🗑️  Removing mesh for ${sessionId}`);
         mesh.dispose();
         this.playerMeshes.delete(sessionId);
+      }
+    });
+  }
+
+  /**
+   * Update all projectile meshes from server state
+   */
+  private updateProjectileMeshes(): void {
+    if (!this.room || !this.room.state) return;
+
+    // Update existing projectile meshes and create new ones
+    this.room.state.projectiles.forEach((projectile: any, id: string) => {
+      let mesh = this.projectileMeshes.get(id);
+
+      // Create mesh if doesn't exist
+      if (!mesh) {
+        // Small sphere for projectile (0.5m radius)
+        mesh = MeshBuilder.CreateSphere(`projectile-${id}`, {
+          diameter: 1,
+          segments: 8
+        }, this.scene);
+
+        // Bright yellow/orange material
+        const material = new StandardMaterial(`projectile-mat-${id}`, this.scene);
+        material.diffuseColor = new Color3(1.0, 0.8, 0.0); // Bright yellow
+        material.emissiveColor = new Color3(1.0, 0.6, 0.0); // Glowing effect
+        mesh.material = material;
+
+        this.projectileMeshes.set(id, mesh);
+      }
+
+      // Update position
+      mesh.position.x = projectile.posX;
+      mesh.position.y = projectile.posY;
+      mesh.position.z = projectile.posZ;
+    });
+
+    // Remove meshes for projectiles that expired
+    this.projectileMeshes.forEach((mesh, id) => {
+      if (!this.room?.state.projectiles.has(id)) {
+        mesh.dispose();
+        this.projectileMeshes.delete(id);
       }
     });
   }

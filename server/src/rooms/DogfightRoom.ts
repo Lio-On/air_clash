@@ -2,9 +2,11 @@ import { Room, Client } from 'colyseus';
 import { CONFIG, Team, GamePhase } from '@air-clash/common';
 import { RoomState } from '../schemas/RoomState';
 import { PlayerState } from '../schemas/PlayerState';
+import { ProjectileState } from '../schemas/ProjectileState';
 
 export class DogfightRoom extends Room<RoomState> {
   private countdownTimer?: NodeJS.Timeout;
+  private projectileIdCounter: number = 0;
 
   /**
    * Called when room is created
@@ -127,7 +129,7 @@ export class DogfightRoom extends Room<RoomState> {
     });
 
     // Player input (flight controls)
-    this.onMessage('playerInput', (client, message: { up: boolean; down: boolean; left: boolean; right: boolean }) => {
+    this.onMessage('playerInput', (client, message: { up: boolean; down: boolean; left: boolean; right: boolean; shoot: boolean }) => {
       const player = this.state.players.get(client.sessionId);
       if (!player) return;
 
@@ -527,7 +529,18 @@ export class DogfightRoom extends Room<RoomState> {
       if (!player.alive) return;
 
       // Get player input (if exists)
-      const input = (player as any).input || { up: false, down: false, left: false, right: false };
+      const input = (player as any).input || { up: false, down: false, left: false, right: false, shoot: false };
+
+      // Shooting
+      if (input.shoot && !player.isBot) { // Only humans can shoot for now
+        // Check cooldown (250ms = 4 shots/second)
+        const now = Date.now();
+        const lastShot = (player as any).lastShootTime || 0;
+        if (now - lastShot >= 250) {
+          this.spawnProjectile(player, sessionId);
+          (player as any).lastShootTime = now;
+        }
+      }
 
       // Pitch control (up/down)
       if (input.up) {
@@ -617,6 +630,133 @@ export class DogfightRoom extends Room<RoomState> {
         if (player.posZ < -arenaRadius) player.posZ = arenaRadius;
       }
     });
+
+    // Update projectiles
+    const PROJECTILE_SPEED = 200; // m/s (fast bullets)
+    const projectilesToRemove: string[] = [];
+
+    this.state.projectiles.forEach((projectile, id) => {
+      // Check lifetime
+      const age = Date.now() - projectile.createdAt;
+      if (age > projectile.maxLifetime) {
+        projectilesToRemove.push(id);
+        return;
+      }
+
+      // Update position
+      projectile.posX += projectile.velocityX * deltaTime;
+      projectile.posY += projectile.velocityY * deltaTime;
+      projectile.posZ += projectile.velocityZ * deltaTime;
+
+      // Check hit with players
+      this.state.players.forEach((player, targetId) => {
+        // Skip if:
+        // - Player is dead
+        // - Player is the shooter
+        // - Player is on same team
+        // - Player is invulnerable
+        if (!player.alive) return;
+        if (targetId === projectile.ownerId) return;
+        if (player.team === projectile.ownerTeam) return;
+        if (player.invulnerable) return;
+
+        // Simple sphere collision (10m radius)
+        const dx = player.posX - projectile.posX;
+        const dy = player.posY - projectile.posY;
+        const dz = player.posZ - projectile.posZ;
+        const distSq = dx * dx + dy * dy + dz * dz;
+        const hitRadius = 10; // 10 meters
+
+        if (distSq < hitRadius * hitRadius) {
+          // Hit! Kill the player
+          player.alive = false;
+          projectilesToRemove.push(id);
+          console.log(`💥 ${projectile.ownerId} hit ${targetId}!`);
+
+          // Update alive counts
+          this.updateAliveCounts();
+        }
+      });
+    });
+
+    // Remove dead projectiles
+    projectilesToRemove.forEach(id => {
+      this.state.projectiles.delete(id);
+    });
+  }
+
+  /**
+   * Spawn a projectile from a player
+   */
+  private spawnProjectile(player: PlayerState, sessionId: string): void {
+    const projectile = new ProjectileState();
+    projectile.id = `proj_${this.projectileIdCounter++}`;
+    projectile.ownerId = sessionId;
+    projectile.ownerTeam = player.team;
+
+    // Spawn slightly in front of plane
+    const SPAWN_OFFSET = 15; // 15 meters in front
+    const forward = {
+      x: Math.sin(player.rotY),
+      y: Math.sin(player.rotX),
+      z: Math.cos(player.rotY)
+    };
+
+    projectile.posX = player.posX + forward.x * SPAWN_OFFSET;
+    projectile.posY = player.posY + forward.y * SPAWN_OFFSET;
+    projectile.posZ = player.posZ + forward.z * SPAWN_OFFSET;
+
+    // Projectile velocity = plane velocity + bullet speed in forward direction
+    const PROJECTILE_SPEED = 200; // m/s
+    projectile.velocityX = player.velocityX + forward.x * PROJECTILE_SPEED;
+    projectile.velocityY = player.velocityY + forward.y * PROJECTILE_SPEED;
+    projectile.velocityZ = player.velocityZ + forward.z * PROJECTILE_SPEED;
+
+    projectile.createdAt = Date.now();
+    projectile.maxLifetime = 3000; // 3 seconds
+
+    this.state.projectiles.set(projectile.id, projectile);
+  }
+
+  /**
+   * Update alive counts for both teams
+   */
+  private updateAliveCounts(): void {
+    let redAlive = 0;
+    let blueAlive = 0;
+
+    this.state.players.forEach((player) => {
+      if (player.alive) {
+        if (player.team === Team.RED) {
+          redAlive++;
+        } else {
+          blueAlive++;
+        }
+      }
+    });
+
+    this.state.aliveRed = redAlive;
+    this.state.aliveBlue = blueAlive;
+
+    // Check for match end (one team eliminated)
+    if (redAlive === 0 || blueAlive === 0) {
+      this.endMatch();
+    }
+  }
+
+  /**
+   * End the match and transition to results
+   */
+  private endMatch(): void {
+    if (this.state.phase !== GamePhase.IN_MATCH) return;
+
+    console.log('🏁 Match ended!');
+    console.log(`   Red alive: ${this.state.aliveRed}`);
+    console.log(`   Blue alive: ${this.state.aliveBlue}`);
+
+    this.state.phase = GamePhase.RESULTS;
+
+    // TODO: Auto-return to lobby after delay (not MVP)
   }
 
   /**
