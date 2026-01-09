@@ -539,6 +539,136 @@ export class DogfightRoom extends Room<RoomState> {
   }
 
   /**
+   * Generate bot AI input based on game state
+   */
+  private generateBotInput(bot: PlayerState, botSessionId: string): { up: boolean; down: boolean; left: boolean; right: boolean; shoot: boolean } {
+    const input = { up: false, down: false, left: false, right: false, shoot: false };
+
+    // Bot AI constants
+    const FIRE_RANGE = 300;          // Maximum firing distance (meters)
+    const FIRE_ANGLE = Math.PI / 6;   // ~30° cone in front (radians)
+    const BOUNDARY_DISTANCE = 900;    // Start turning inward at 900m from center
+    const AIM_IMPERFECTION = 0.1;    // Random aiming error (radians)
+
+    // Check boundary avoidance first (highest priority)
+    const distanceFromCenter = Math.sqrt(bot.posX ** 2 + bot.posZ ** 2);
+    if (distanceFromCenter > BOUNDARY_DISTANCE) {
+      // Turn toward center
+      const angleToCenter = Math.atan2(0 - bot.posX, 0 - bot.posZ);
+      const angleDiff = this.normalizeAngle(angleToCenter - bot.rotY);
+
+      if (angleDiff > 0.1) {
+        input.right = true;
+      } else if (angleDiff < -0.1) {
+        input.left = true;
+      }
+
+      // Pitch slightly up to avoid ground
+      if (bot.posY < 80) {
+        input.up = true;
+      }
+
+      return input;
+    }
+
+    // Find nearest enemy target
+    let nearestEnemy: PlayerState | null = null;
+    let nearestDistance = Infinity;
+
+    this.state.players.forEach((enemy, enemySessionId) => {
+      // Skip self, teammates, and dead players
+      if (enemySessionId === botSessionId || enemy.team === bot.team || !enemy.alive) {
+        return;
+      }
+
+      const dx = enemy.posX - bot.posX;
+      const dy = enemy.posY - bot.posY;
+      const dz = enemy.posZ - bot.posZ;
+      const distance = Math.sqrt(dx ** 2 + dy ** 2 + dz ** 2);
+
+      if (distance < nearestDistance) {
+        nearestDistance = distance;
+        nearestEnemy = enemy;
+      }
+    });
+
+    // If no enemy found, fly toward center
+    if (!nearestEnemy) {
+      const angleToCenter = Math.atan2(0 - bot.posX, 0 - bot.posZ);
+      const angleDiff = this.normalizeAngle(angleToCenter - bot.rotY);
+
+      if (angleDiff > 0.1) {
+        input.right = true;
+      } else if (angleDiff < -0.1) {
+        input.left = true;
+      }
+
+      // Maintain altitude
+      if (bot.posY < 80) {
+        input.up = true;
+      } else if (bot.posY > 120) {
+        input.down = true;
+      }
+
+      return input;
+    }
+
+    // Calculate direction to target
+    const dx = nearestEnemy.posX - bot.posX;
+    const dy = nearestEnemy.posY - bot.posY;
+    const dz = nearestEnemy.posZ - bot.posZ;
+
+    // Calculate desired yaw (horizontal angle)
+    const desiredYaw = Math.atan2(dx, dz);
+
+    // Add imperfect aim (randomness)
+    const aimError = (Math.random() - 0.5) * AIM_IMPERFECTION;
+    const targetYaw = desiredYaw + aimError;
+
+    // Calculate angle difference
+    const yawDiff = this.normalizeAngle(targetYaw - bot.rotY);
+
+    // Yaw control (turn toward target)
+    if (yawDiff > 0.05) {
+      input.right = true;
+    } else if (yawDiff < -0.05) {
+      input.left = true;
+    }
+
+    // Calculate desired pitch (vertical angle)
+    const horizontalDistance = Math.sqrt(dx ** 2 + dz ** 2);
+    const desiredPitch = Math.atan2(-dy, horizontalDistance); // Negative because up is negative rotX
+
+    // Pitch control (aim at target vertically)
+    const pitchDiff = this.normalizeAngle(desiredPitch - bot.rotX);
+
+    if (pitchDiff > 0.05) {
+      input.up = true;
+    } else if (pitchDiff < -0.05) {
+      input.down = true;
+    }
+
+    // Shooting logic: fire if target is close and roughly in front
+    const isInRange = nearestDistance < FIRE_RANGE;
+    const isInFront = Math.abs(yawDiff) < FIRE_ANGLE && Math.abs(pitchDiff) < FIRE_ANGLE;
+
+    if (isInRange && isInFront) {
+      input.shoot = true;
+    }
+
+    return input;
+  }
+
+  /**
+   * Normalize angle to range [-π, π]
+   */
+  private normalizeAngle(angle: number): number {
+    while (angle > Math.PI) angle -= 2 * Math.PI;
+    while (angle < -Math.PI) angle += 2 * Math.PI;
+    return angle;
+  }
+
+  /**
    * Update physics for all players
    */
   private updatePhysics(deltaTime: number): void {
@@ -559,11 +689,16 @@ export class DogfightRoom extends Room<RoomState> {
       // Skip dead players
       if (!player.alive) return;
 
-      // Get player input (if exists)
-      const input = (player as any).input || { up: false, down: false, left: false, right: false, shoot: false };
+      // Get player input (bots generate AI input, humans use their input)
+      let input;
+      if (player.isBot) {
+        input = this.generateBotInput(player, sessionId);
+      } else {
+        input = (player as any).input || { up: false, down: false, left: false, right: false, shoot: false };
+      }
 
-      // Shooting
-      if (input.shoot && !player.isBot) { // Only humans can shoot for now
+      // Shooting (both humans and bots can shoot)
+      if (input.shoot) {
         // Check cooldown (250ms = 4 shots/second)
         const now = Date.now();
         const lastShot = (player as any).lastShootTime || 0;
