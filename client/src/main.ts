@@ -470,6 +470,10 @@ class Game {
     // Create parent mesh to hold all parts
     const airplane = new Mesh(`airplane-${sessionId}`, this.scene);
 
+    // Rotate mesh -90° on Y so it faces +X (Forward = East in standard trig)
+    // This aligns visual model with physics (0 degrees = +X direction)
+    airplane.rotation.y = -Math.PI / 2;
+
     // Fuselage (body) - long box
     const fuselage = MeshBuilder.CreateBox(`fuselage-${sessionId}`, {
       width: 2,   // X axis
@@ -573,16 +577,16 @@ class Game {
       mesh.position = Vector3.Lerp(mesh.position, targetPos, 0.3);
 
       // Interpolate rotation (shortest path)
-      // Add π/2 to rotY because mesh is built facing -Z but physics expects rotY=0 to mean +X
+      // Mesh base rotation is already set to -π/2 at creation, server rotations are relative to that
       mesh.rotation.x = Scalar.Lerp(mesh.rotation.x, targetRot.x, 0.3);
-      mesh.rotation.y = Scalar.Lerp(mesh.rotation.y, targetRot.y + Math.PI / 2, 0.3);
+      mesh.rotation.y = Scalar.Lerp(mesh.rotation.y, targetRot.y - Math.PI / 2, 0.3);
       mesh.rotation.z = Scalar.Lerp(mesh.rotation.z, targetRot.z, 0.3);
-      
+
       // If distance is too large (teleport/spawn), snap instantly
       if (Vector3.Distance(mesh.position, targetPos) > 100) {
         mesh.position = targetPos;
         mesh.rotation.x = targetRot.x;
-        mesh.rotation.y = targetRot.y + Math.PI / 2;  // Add π/2 offset for mesh orientation
+        mesh.rotation.y = targetRot.y - Math.PI / 2;
         mesh.rotation.z = targetRot.z;
       }
 

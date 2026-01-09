@@ -581,11 +581,12 @@ export class DogfightRoom extends Room<RoomState> {
       }
 
       // Yaw control (left/right)
+      // Standard trig: right turn = clockwise = decrease angle, left turn = counter-clockwise = increase angle
       if (input.left) {
-        player.rotY -= YAW_SPEED * deltaTime;
+        player.rotY += YAW_SPEED * deltaTime;  // Counter-clockwise
       }
       if (input.right) {
-        player.rotY += YAW_SPEED * deltaTime;
+        player.rotY -= YAW_SPEED * deltaTime;  // Clockwise
       }
 
       // Clamp pitch to prevent loop-de-loops
