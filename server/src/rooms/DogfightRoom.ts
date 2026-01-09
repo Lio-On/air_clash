@@ -130,11 +130,27 @@ export class DogfightRoom extends Room<RoomState> {
 
     // Player input (flight controls)
     this.onMessage('playerInput', (client, message: { up: boolean; down: boolean; left: boolean; right: boolean; shoot: boolean }) => {
+      // Debug: Log first input received per client
+      if (!(client as any)._hasLoggedInput) {
+        console.log(`🎮 First playerInput received from ${client.sessionId}`);
+        (client as any)._hasLoggedInput = true;
+      }
+
       const player = this.state.players.get(client.sessionId);
-      if (!player) return;
+      if (!player) {
+        console.log(`⚠️  playerInput from ${client.sessionId} but player not found`);
+        return;
+      }
 
       // Only process input during match
-      if (this.state.phase !== GamePhase.IN_MATCH) return;
+      if (this.state.phase !== GamePhase.IN_MATCH) {
+        // Log once per client if they send input too early
+        if (!(client as any)._hasLoggedWrongPhase) {
+          console.log(`⚠️  playerInput from ${client.sessionId} during ${this.state.phase} (expecting IN_MATCH)`);
+          (client as any)._hasLoggedWrongPhase = true;
+        }
+        return;
+      }
 
       // Only process input for alive players
       if (!player.alive) return;
@@ -447,6 +463,19 @@ export class DogfightRoom extends Room<RoomState> {
       playerTeam,
       false // not a bot
     );
+
+    // Make player visible in lobby
+    player.alive = true;
+    player.ready = false;
+
+    // Random lobby position (parking)
+    // Random angle at 50m radius
+    const angle = Math.random() * Math.PI * 2;
+    const radius = 50 + Math.random() * 50;
+    player.posX = Math.cos(angle) * radius;
+    player.posZ = Math.sin(angle) * radius;
+    player.posY = 10; // On ground
+    player.rotY = Math.atan2(-player.posX, -player.posZ); // Face center
 
     // Add player to state
     this.state.players.set(client.sessionId, player);

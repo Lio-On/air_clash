@@ -660,7 +660,7 @@ class Game {
     this.camera.rotationOffset = 180;  // Look forward from behind (180 degrees)
     this.camera.cameraAcceleration = 0.05;  // How fast camera moves to target
     this.camera.maxCameraSpeed = 20;   // Maximum camera movement speed
-    this.camera.attachControl(this.engine.getRenderingCanvas(), true);
+    // Note: Do NOT attachControl - we want camera to follow plane automatically without manual control
 
     // Ambient light - soft overall illumination
     const ambientLight = new HemisphericLight('ambientLight', new Vector3(0, 1, 0), scene);
