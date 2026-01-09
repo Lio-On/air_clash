@@ -318,8 +318,9 @@ export class DogfightRoom extends Room<RoomState> {
     const spawnX = xDirection * CONFIG.SPAWN_DISTANCE_FROM_CENTER;
     const spawnY = CONFIG.SPAWN_ALTITUDE;
 
-    // Rotation: RED faces right (+X direction, 0 rad), BLUE faces left (-X direction, π rad)
-    const rotY = team === Team.RED ? 0 : Math.PI;
+    // Rotation: RED faces right (+X direction), BLUE faces left (-X direction)
+    // Z-forward math: 0°=+Z, 90°=+X, 180°=-Z, 270°=-X
+    const rotY = team === Team.RED ? Math.PI / 2 : -Math.PI / 2;  // 90° and -90°
 
     // Arrange planes in a V-formation (spread in Z axis)
     // Center plane at Z=0, others spread with SPAWN_SPACING
