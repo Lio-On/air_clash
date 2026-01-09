@@ -546,8 +546,8 @@ export class DogfightRoom extends Room<RoomState> {
     if (this.state.phase !== GamePhase.IN_MATCH) return;
 
     // Physics constants (m/s and m/s²)
-    const PITCH_SPEED = 1.5;        // Radians per second (pitch up/down)
-    const YAW_SPEED = 1.0;          // Radians per second (turn left/right)
+    const PITCH_SPEED = 1.0;        // Radians per second (pitch up/down) - reduced for smoother control
+    const YAW_SPEED = 0.7;          // Radians per second (turn left/right) - reduced for smoother control
     const FORWARD_ACCELERATION = 20; // m/s² (throttle)
     const AIR_RESISTANCE = 0.5;     // Drag coefficient
     const MIN_SPEED = 30;           // Minimum speed (m/s)
@@ -595,11 +595,11 @@ export class DogfightRoom extends Room<RoomState> {
       player.rotX = Math.max(-Math.PI / 3, Math.min(Math.PI / 3, player.rotX));
 
       // Forward thrust (Z-Forward coordinate system)
-      // Standard 3D Game Math: Yaw 0 = +Z forward
+      // Negate X/Z to point out nose instead of tail (180° correction)
       const forward = {
-        x: Math.sin(player.rotY) * Math.cos(player.rotX),  // X = Sin(Yaw) * Cos(Pitch)
-        y: Math.sin(player.rotX),                          // Y = Sin(Pitch)
-        z: Math.cos(player.rotY) * Math.cos(player.rotX)   // Z = Cos(Yaw) * Cos(Pitch)
+        x: -Math.sin(player.rotY) * Math.cos(player.rotX),  // Negate X
+        y: Math.sin(player.rotX),                           // Keep Y (pitch is correct)
+        z: -Math.cos(player.rotY) * Math.cos(player.rotX)   // Negate Z
       };
 
       // Apply forward acceleration
@@ -737,11 +737,11 @@ export class DogfightRoom extends Room<RoomState> {
 
     // Spawn slightly in front of plane (from the nose, not tail)
     const SPAWN_OFFSET = 15; // 15 meters in front of nose
-    // Must match physics forward vector (Z-Forward coordinate system)
+    // Must match physics forward vector (negated to point out nose)
     const forward = {
-      x: Math.sin(player.rotY) * Math.cos(player.rotX),  // X = Sin(Yaw) * Cos(Pitch)
-      y: Math.sin(player.rotX),                          // Y = Sin(Pitch)
-      z: Math.cos(player.rotY) * Math.cos(player.rotX)   // Z = Cos(Yaw) * Cos(Pitch)
+      x: -Math.sin(player.rotY) * Math.cos(player.rotX),  // Negate X
+      y: Math.sin(player.rotX),                           // Keep Y
+      z: -Math.cos(player.rotY) * Math.cos(player.rotX)   // Negate Z
     };
 
     projectile.posX = player.posX + forward.x * SPAWN_OFFSET;
