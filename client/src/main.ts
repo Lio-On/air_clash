@@ -1,4 +1,4 @@
-import { Engine, Scene, HemisphericLight, DirectionalLight, Vector3, MeshBuilder, FreeCamera, StandardMaterial, Color3, Color4 } from '@babylonjs/core';
+import { Engine, Scene, HemisphericLight, DirectionalLight, Vector3, MeshBuilder, FreeCamera, StandardMaterial, Color3, Color4, Mesh } from '@babylonjs/core';
 import { CONFIG, Team, GamePhase } from '@air-clash/common';
 import { clientConfig } from './config';
 import { UIManager } from './UIManager';
@@ -14,6 +14,7 @@ class Game {
   private currentTeam: string = 'RED';
   private isReady: boolean = false;
   private countdownInterval: any = null;
+  private playerMeshes: Map<string, Mesh> = new Map();
 
   constructor() {
     // Clear loading screen
@@ -63,6 +64,7 @@ class Game {
 
     // Run render loop
     this.engine.runRenderLoop(() => {
+      this.updatePlayerMeshes();
       this.scene.render();
     });
 
@@ -351,6 +353,109 @@ class Game {
     });
 
     this.ui.updateRoster(players);
+  }
+
+  /**
+   * Create airplane placeholder mesh
+   */
+  private createAirplaneMesh(sessionId: string, team: Team): Mesh {
+    // Create parent mesh to hold all parts
+    const airplane = new Mesh(`airplane-${sessionId}`, this.scene);
+
+    // Fuselage (body) - long box
+    const fuselage = MeshBuilder.CreateBox(`fuselage-${sessionId}`, {
+      width: 2,   // X axis
+      height: 1,  // Y axis
+      depth: 5    // Z axis (length)
+    }, this.scene);
+    fuselage.parent = airplane;
+
+    // Wings - wide flat box
+    const wings = MeshBuilder.CreateBox(`wings-${sessionId}`, {
+      width: 8,   // X axis (wingspan)
+      height: 0.3,  // Y axis (thin)
+      depth: 2    // Z axis
+    }, this.scene);
+    wings.parent = airplane;
+    wings.position.z = -0.5; // Slightly behind center
+
+    // Tail - vertical stabilizer
+    const tail = MeshBuilder.CreateBox(`tail-${sessionId}`, {
+      width: 0.3,  // X axis (thin)
+      height: 2,   // Y axis (tall)
+      depth: 1.5   // Z axis
+    }, this.scene);
+    tail.parent = airplane;
+    tail.position.y = 0.5; // Above fuselage
+    tail.position.z = 2;   // At back
+
+    // Material based on team
+    const material = new StandardMaterial(`airplane-mat-${sessionId}`, this.scene);
+    if (team === Team.RED) {
+      material.diffuseColor = new Color3(0.86, 0.21, 0.27); // Red (#dc3545)
+    } else {
+      material.diffuseColor = new Color3(0.05, 0.43, 0.99); // Blue (#0d6efd)
+    }
+    material.specularColor = new Color3(0.5, 0.5, 0.5); // Some shine
+
+    // Apply material to all parts
+    fuselage.material = material;
+    wings.material = material;
+    tail.material = material;
+
+    return airplane;
+  }
+
+  /**
+   * Update all player mesh positions from server state
+   */
+  private updatePlayerMeshes(): void {
+    if (!this.room || !this.room.state) return;
+
+    // Update existing meshes and create new ones
+    this.room.state.players.forEach((player: any, sessionId: string) => {
+      let mesh = this.playerMeshes.get(sessionId);
+
+      // Create mesh if it doesn't exist
+      if (!mesh) {
+        mesh = this.createAirplaneMesh(sessionId, player.team);
+        this.playerMeshes.set(sessionId, mesh);
+        console.log(`✈️  Created mesh for ${player.name} (${player.team})`);
+      }
+
+      // Update position
+      mesh.position.x = player.posX;
+      mesh.position.y = player.posY;
+      mesh.position.z = player.posZ;
+
+      // Update rotation
+      mesh.rotation.x = player.rotX;
+      mesh.rotation.y = player.rotY;
+      mesh.rotation.z = player.rotZ;
+
+      // Visual indicator for spawn protection
+      if (player.invulnerable) {
+        // Make mesh slightly transparent during invulnerability
+        const material = mesh.getChildMeshes()[0].material as StandardMaterial;
+        if (material) {
+          material.alpha = 0.7;
+        }
+      } else {
+        const material = mesh.getChildMeshes()[0].material as StandardMaterial;
+        if (material && material.alpha !== 1.0) {
+          material.alpha = 1.0;
+        }
+      }
+    });
+
+    // Remove meshes for players that left
+    this.playerMeshes.forEach((mesh, sessionId) => {
+      if (!this.room?.state.players.has(sessionId)) {
+        console.log(`🗑️  Removing mesh for ${sessionId}`);
+        mesh.dispose();
+        this.playerMeshes.delete(sessionId);
+      }
+    });
   }
 
   private createScene(): Scene {

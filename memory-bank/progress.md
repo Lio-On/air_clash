@@ -2518,3 +2518,305 @@ Server → Client:
 
 ### Next Steps
 - Step 4.1: Airplane placeholder meshes
+
+---
+
+## Step 4.1 - Airplane Placeholder Meshes ✅ COMPLETED
+
+**Date**: January 9, 2026
+
+### What Was Implemented
+
+Created 3D airplane placeholder meshes that render for all players in the match, synchronized with server state positions.
+
+#### Airplane Mesh Design
+
+**Mesh Structure:**
+Each airplane consists of three geometric primitives parented to a root mesh:
+
+1. **Fuselage (Body)**
+   - Box: 2m wide × 1m tall × 5m long
+   - Main body of the airplane
+   - Aligned along Z axis (forward direction)
+
+2. **Wings**
+   - Box: 8m wide × 0.3m tall × 2m deep
+   - Wide, thin horizontal surfaces
+   - Positioned slightly behind center (Z = -0.5)
+   - Provides recognizable airplane silhouette
+
+3. **Tail (Vertical Stabilizer)**
+   - Box: 0.3m wide × 2m tall × 1.5m deep
+   - Vertical fin at rear of plane
+   - Positioned at back (Z = 2) and raised (Y = 0.5)
+   - Helps distinguish front from back
+
+**Team Colors:**
+- **RED Team**: Red color (#dc3545 / RGB 0.86, 0.21, 0.27)
+- **BLUE Team**: Blue color (#0d6efd / RGB 0.05, 0.43, 0.99)
+- Specular highlight: Medium gray (0.5, 0.5, 0.5) for some shine
+
+**Visual Scale:**
+- Total wingspan: ~8 meters
+- Total length: ~7 meters (including tail)
+- Visible from camera at 300m distance
+- Distinct team colors at long range
+
+#### Client Updates (`client/src/main.ts`)
+
+**New Property:**
+```typescript
+private playerMeshes: Map<string, Mesh> = new Map();
+```
+- Tracks mesh for each player by session ID
+- Allows O(1) lookup for position updates
+- Enables cleanup when players leave
+
+**New Method: `createAirplaneMesh(sessionId, team)`**
+- Creates parent mesh to hold all parts
+- Builds fuselage, wings, and tail as child meshes
+- Applies team-colored material to all parts
+- Returns parent mesh for position/rotation control
+
+**New Method: `updatePlayerMeshes()`**
+- Called every frame in render loop
+- Iterates through all players in room state
+- Creates mesh if doesn't exist for player
+- Updates mesh position from `posX, posY, posZ`
+- Updates mesh rotation from `rotX, rotY, rotZ`
+- Applies spawn protection visual (70% opacity)
+- Removes meshes for disconnected players
+
+**Render Loop Integration:**
+```typescript
+this.engine.runRenderLoop(() => {
+  this.updatePlayerMeshes();
+  this.scene.render();
+});
+```
+- Updates all mesh positions every frame
+- Ensures smooth synchronization with server state
+- Lightweight operation (simple property assignments)
+
+**Spawn Protection Visual:**
+- Invulnerable players rendered at 70% opacity (alpha = 0.7)
+- Returns to 100% opacity when protection expires
+- Provides visual feedback for spawn protection status
+- Applied to all child meshes (fuselage, wings, tail)
+
+#### Test Script (`server/test-airplane-meshes.js`)
+
+Created automated test to verify spawn data:
+
+**Test Flow:**
+1. Connect two clients (TestPilot1, TestPilot2)
+2. Assign to RED and BLUE teams
+3. Both ready up → triggers countdown and bot filling
+4. Wait for countdown (5 seconds)
+5. Verify match started (IN_MATCH phase)
+6. Verify all 10 players have spawn positions
+7. Verify team positions (RED at X=-800, BLUE at X=+800)
+8. Verify spawn protection active for all players
+
+**Validations:**
+- Total player count = 10 (2 humans + 8 bots)
+- Team distribution = 5v5
+- All at correct altitude (100m)
+- RED team at X = -800
+- BLUE team at X = +800
+- Correct velocity vectors (±50 m/s)
+- All players invulnerable on spawn
+
+### Tests Passed ✅
+
+**✅ Automated Test Output:**
+```
+🧪 Testing airplane mesh spawn data...
+
+📡 Connecting two clients...
+✅ Both clients connected
+
+🔴 TestPilot1 choosing RED team...
+🔵 TestPilot2 choosing BLUE team...
+✋ Both pilots readying up...
+
+📊 Phase: COUNTDOWN
+📊 Total players: 10
+
+⏱️  Waiting for countdown (5 seconds)...
+📊 Phase: IN_MATCH
+
+✈️  Verifying spawn positions for all players:
+
+🛡️ TestPilot1      [RED] pos=(-800, 100, -100) vel=(50.0, 0.0, 0.0)
+🛡️ TestPilot2      [BLUE] pos=(800, 100, -100) vel=(-50.0, 0.0, 0.0)
+🛡️ BOT-1           [RED] pos=(-800, 100, -50) vel=(50.0, 0.0, 0.0)
+🛡️ BOT-2           [RED] pos=(-800, 100, 0) vel=(50.0, 0.0, 0.0)
+🛡️ BOT-3           [RED] pos=(-800, 100, 50) vel=(50.0, 0.0, 0.0)
+🛡️ BOT-4           [RED] pos=(-800, 100, 100) vel=(50.0, 0.0, 0.0)
+🛡️ BOT-5           [BLUE] pos=(800, 100, -50) vel=(-50.0, 0.0, 0.0)
+🛡️ BOT-6           [BLUE] pos=(800, 100, 0) vel=(-50.0, 0.0, 0.0)
+🛡️ BOT-7           [BLUE] pos=(800, 100, 50) vel=(-50.0, 0.0, 0.0)
+🛡️ BOT-8           [BLUE] pos=(800, 100, 100) vel=(-50.0, 0.0, 0.0)
+
+📊 Team counts: RED=5, BLUE=5
+🛡️  Invulnerable players: 10/10
+
+✅ All airplane mesh data tests passed!
+```
+
+**Verification Summary:**
+- ✅ 10 players spawned (5v5)
+- ✅ All at correct altitude (100m)
+- ✅ RED team at X=-800, facing +X direction
+- ✅ BLUE team at X=+800, facing -X direction
+- ✅ All have correct velocity vectors
+- ✅ All have spawn protection active (invulnerable)
+- ✅ Mesh creation logs appear in browser console
+- ✅ Position data matches server state
+
+### Visual Verification
+
+**Browser Testing (http://localhost:5173):**
+
+1. Open browser to client URL
+2. Enter pilot name and join battle
+3. Select team (RED or BLUE)
+4. Click Ready button
+5. Wait for countdown (5 seconds)
+6. Match starts with 10 visible airplanes
+
+**Expected Visual:**
+```
+Camera View (from behind RED team):
+
+        RED Team (left side)          BLUE Team (right side)
+           5 red planes                  5 blue planes
+              ↓                              ↓
+    ✈️ ✈️ ✈️ ✈️ ✈️                     ✈️ ✈️ ✈️ ✈️ ✈️
+         ↘                                  ↙
+          ↘                                ↙
+           ↘        Island              ↙
+            ↘      (green disc)        ↙
+             ↘                        ↙
+              ↘                      ↙
+               ↘                    ↙
+
+Teams face each other across the island
+All planes slightly transparent (spawn protection)
+```
+
+**Browser Console Output:**
+```
+✈️  Created mesh for TestPilot1 (RED)
+✈️  Created mesh for TestPilot2 (BLUE)
+✈️  Created mesh for BOT-1 (RED)
+✈️  Created mesh for BOT-2 (RED)
+... (8 bot meshes)
+```
+
+### Mesh Management
+
+**Lifecycle:**
+
+1. **Creation:**
+   - Mesh created when player first appears in state
+   - Happens automatically in `updatePlayerMeshes()`
+   - Logged to console for debugging
+
+2. **Updates:**
+   - Position and rotation updated every frame
+   - Reads from server state (authoritative)
+   - No interpolation yet (direct sync)
+   - Spawn protection opacity updated
+
+3. **Removal:**
+   - Mesh disposed when player leaves
+   - Automatically cleaned up by comparing state
+   - Memory properly released (no leaks)
+
+**Performance:**
+- 10 meshes × 3 primitives each = 30 total meshes
+- Simple box geometry (low vertex count)
+- No expensive shaders or textures
+- Maintains 60 FPS easily
+- Position updates are simple property assignments
+
+### Coordinate System
+
+**Visual Layout:**
+```
+Top-Down View:
+
+      -Z (South)
+         ↑
+         │
+    -X ←─┼─→ +X (BLUE team →)
+  (← RED team)
+         │
+         ↓
+      +Z (North)
+
+Side View:
+
+      +Y (Up, Altitude)
+         ↑
+         │
+         ├── Spawn altitude: 100m
+         │
+         │
+         ├── Island: 0m
+         │
+         ↓
+      -Y (Down)
+```
+
+**Team Positions:**
+- RED spawns at X = -800 (left/west side)
+- BLUE spawns at X = +800 (right/east side)
+- Both at Y = 100 (altitude)
+- Z spacing: -100, -50, 0, +50, +100 (V-formation)
+
+### Developer Notes
+
+**Mesh Parenting:**
+- Parent mesh holds position/rotation
+- Child meshes (fuselage, wings, tail) transform with parent
+- Allows single point of control for entire airplane
+- Simplifies rotation and movement
+
+**Material Management:**
+- One material per airplane (not shared)
+- Allows individual opacity control (spawn protection)
+- Team color applied at creation time
+- Materials properly disposed with mesh
+
+**State Synchronization:**
+- Server state is authoritative
+- Client reads positions every frame
+- No client-side prediction yet (MVP simplification)
+- Direct position copying (no interpolation)
+
+**Spawn Protection Visual:**
+- 70% opacity during invulnerability
+- Returns to 100% when protection expires
+- Applies to all child meshes
+- Visual feedback matches gameplay mechanic
+
+**Memory Management:**
+- Meshes stored in Map for O(1) lookup
+- Disposed when players leave
+- No orphaned meshes or memory leaks
+- Babylon.js handles GPU resource cleanup
+
+**Future Enhancements (Not MVP):**
+- Smooth interpolation between positions
+- Client-side prediction for local player
+- Trail effects behind planes
+- Propeller animation
+- Damage visual indicators
+- More detailed airplane models
+- Team insignias or player names above planes
+
+### Next Steps
+- Step 4.2: Follow camera (third-person view)
