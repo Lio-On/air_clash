@@ -4,6 +4,8 @@ import { RoomState } from '../schemas/RoomState';
 import { PlayerState } from '../schemas/PlayerState';
 
 export class DogfightRoom extends Room<RoomState> {
+  private countdownTimer?: NodeJS.Timeout;
+
   /**
    * Called when room is created
    */
@@ -230,6 +232,63 @@ export class DogfightRoom extends Room<RoomState> {
 
     console.log(`✅ Bots filled! Final teams: Red ${finalRed}, Blue ${finalBlue}`);
     console.log(`📊 Total players: ${this.state.players.size}/10`);
+
+    // Start countdown after bots are filled
+    this.startCountdown();
+  }
+
+  /**
+   * Start countdown timer (5 seconds)
+   */
+  private startCountdown(): void {
+    // Prevent countdown if not in LOBBY phase
+    if (this.state.phase !== GamePhase.LOBBY) {
+      console.log(`⚠️  Cannot start countdown from phase ${this.state.phase}`);
+      return;
+    }
+
+    // Transition to COUNTDOWN phase
+    this.state.phase = GamePhase.COUNTDOWN;
+    this.state.countdownStart = Date.now();
+
+    console.log(`⏳ Countdown started! ${CONFIG.COUNTDOWN_DURATION / 1000} seconds until match start...`);
+    console.log(`📍 Room phase: ${this.state.phase}`);
+
+    // Update metadata
+    this.setMetadata({
+      ...this.metadata,
+      phase: this.state.phase,
+    });
+
+    // Set timer for countdown completion
+    this.countdownTimer = setTimeout(() => {
+      this.onCountdownComplete();
+    }, CONFIG.COUNTDOWN_DURATION);
+  }
+
+  /**
+   * Called when countdown timer completes
+   */
+  private onCountdownComplete(): void {
+    console.log(`⏰ Countdown complete! Transitioning to match...`);
+
+    // Transition to IN_MATCH phase
+    this.state.phase = GamePhase.IN_MATCH;
+    this.state.matchStart = Date.now();
+
+    console.log(`🎮 Match started!`);
+    console.log(`📍 Room phase: ${this.state.phase}`);
+
+    // Update metadata
+    this.setMetadata({
+      ...this.metadata,
+      phase: this.state.phase,
+    });
+
+    // Clear countdown timer
+    this.countdownTimer = undefined;
+
+    // TODO: Step 2.6 will handle spawn assignment
   }
 
   /**
@@ -272,8 +331,16 @@ export class DogfightRoom extends Room<RoomState> {
   onLeave(client: Client, consented: boolean) {
     console.log(`👋 Client ${client.sessionId} left (consented: ${consented})`);
 
-    // Remove player from state
-    this.state.players.delete(client.sessionId);
+    const player = this.state.players.get(client.sessionId);
+
+    // If leaving during countdown or match, convert to bot
+    if (player && (this.state.phase === GamePhase.COUNTDOWN || this.state.phase === GamePhase.IN_MATCH)) {
+      console.log(`🔄 Converting ${player.name} to bot (disconnect during ${this.state.phase})`);
+      this.convertPlayerToBot(client.sessionId);
+    } else {
+      // Otherwise, just remove from state
+      this.state.players.delete(client.sessionId);
+    }
 
     console.log(`📊 Player count: ${this.state.players.size}/${this.maxClients}`);
 
@@ -285,11 +352,39 @@ export class DogfightRoom extends Room<RoomState> {
   }
 
   /**
+   * Convert a human player to a bot (used when player disconnects during countdown/match)
+   */
+  private convertPlayerToBot(sessionId: string): void {
+    const player = this.state.players.get(sessionId);
+    if (!player) return;
+
+    const oldName = player.name;
+    const team = player.team;
+
+    // Generate bot name
+    const botName = `BOT-${oldName}`;
+
+    // Update player properties to be a bot
+    player.isBot = true;
+    player.name = botName;
+    player.ready = true; // Bots are always ready
+
+    console.log(`🤖 ${oldName} → ${botName} (team ${team})`);
+  }
+
+  /**
    * Called when room is disposed (no more clients or manually disposed)
    */
   onDispose() {
     console.log('🗑️  DogfightRoom disposed:', this.roomId);
     console.log(`📊 Final player count: ${this.state.players.size}`);
     console.log(`📍 Final phase: ${this.state.phase}`);
+
+    // Clean up countdown timer if exists
+    if (this.countdownTimer) {
+      clearTimeout(this.countdownTimer);
+      this.countdownTimer = undefined;
+      console.log('🧹 Countdown timer cleared');
+    }
   }
 }
