@@ -552,6 +552,7 @@ export class DogfightRoom extends Room<RoomState> {
     const MIN_SPEED = 30;           // Minimum speed (m/s)
     const MAX_SPEED = 100;          // Maximum speed (m/s)
     const GRAVITY = -9.8;           // m/s² (downward)
+    const LIFT_COEFFICIENT = 0.15;  // Lift generated per m/s of forward speed
 
     this.state.players.forEach((player, sessionId) => {
       // Skip dead players
@@ -604,6 +605,13 @@ export class DogfightRoom extends Room<RoomState> {
 
       // Apply gravity
       player.velocityY += GRAVITY * deltaTime;
+
+      // Apply lift (upward force proportional to forward speed)
+      // Calculate horizontal speed (speed in XZ plane)
+      const horizontalSpeed = Math.sqrt(player.velocityX ** 2 + player.velocityZ ** 2);
+      // Lift counters gravity, stronger at higher speeds
+      const lift = horizontalSpeed * LIFT_COEFFICIENT;
+      player.velocityY += lift * deltaTime;
 
       // Apply air resistance
       const speed = Math.sqrt(

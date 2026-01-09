@@ -1,4 +1,4 @@
-import { Engine, Scene, HemisphericLight, DirectionalLight, Vector3, MeshBuilder, FreeCamera, FollowCamera, StandardMaterial, Color3, Color4, Mesh } from '@babylonjs/core';
+import { Engine, Scene, HemisphericLight, DirectionalLight, Vector3, MeshBuilder, FreeCamera, FollowCamera, StandardMaterial, Color3, Color4, Mesh, Scalar } from '@babylonjs/core';
 import { CONFIG, Team, GamePhase } from '@air-clash/common';
 import { clientConfig } from './config';
 import { UIManager } from './UIManager';
@@ -563,15 +563,29 @@ class Game {
         }
       }
 
-      // Update position
-      mesh.position.x = player.posX;
-      mesh.position.y = player.posY;
-      mesh.position.z = player.posZ;
+      // Target position and rotation from server
+      const targetPos = new Vector3(player.posX, player.posY, player.posZ);
+      const targetRot = new Vector3(player.rotX, player.rotY, player.rotZ);
 
-      // Update rotation
-      mesh.rotation.x = player.rotX;
-      mesh.rotation.y = player.rotY;
-      mesh.rotation.z = player.rotZ;
+      // Interpolate position (smooth movement) to fix flickering
+      // Lerp factor 0.3 means we move 30% towards target each frame (smooth catchup)
+      // This smoothing hides the 30Hz vs 60Hz update rate difference
+      mesh.position = Vector3.Lerp(mesh.position, targetPos, 0.3);
+
+      // Interpolate rotation (shortest path)
+      // We can just lerp Euler angles for MVP, but need to handle wrap-around for Y if needed
+      // For now, simple lerp is fine as planes don't spin wildly
+      mesh.rotation.x = Scalar.Lerp(mesh.rotation.x, targetRot.x, 0.3);
+      mesh.rotation.y = Scalar.Lerp(mesh.rotation.y, targetRot.y, 0.3);
+      mesh.rotation.z = Scalar.Lerp(mesh.rotation.z, targetRot.z, 0.3);
+      
+      // If distance is too large (teleport/spawn), snap instantly
+      if (Vector3.Distance(mesh.position, targetPos) > 100) {
+        mesh.position = targetPos;
+        mesh.rotation.x = targetRot.x;
+        mesh.rotation.y = targetRot.y;
+        mesh.rotation.z = targetRot.z;
+      }
 
       // Hide dead players
       if (!player.alive) {
@@ -657,7 +671,7 @@ class Game {
     this.camera = new FollowCamera('followCamera', new Vector3(0, 150, -300), scene);
     this.camera.radius = 30;           // Distance from target (30 meters behind)
     this.camera.heightOffset = 10;     // Height above target (10 meters up)
-    this.camera.rotationOffset = 180;  // Look forward from behind (180 degrees)
+    this.camera.rotationOffset = 0;    // Camera behind plane, looking forward
     this.camera.cameraAcceleration = 0.05;  // How fast camera moves to target
     this.camera.maxCameraSpeed = 20;   // Maximum camera movement speed
     // Note: Do NOT attachControl - we want camera to follow plane automatically without manual control
