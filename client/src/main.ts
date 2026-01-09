@@ -1,10 +1,14 @@
 import { Engine, Scene, HemisphericLight, DirectionalLight, Vector3, MeshBuilder, FreeCamera, StandardMaterial, Color3, Color4 } from '@babylonjs/core';
 import { CONFIG, Team, GamePhase } from '@air-clash/common';
 import { clientConfig } from './config';
+import { UIManager } from './UIManager';
 
 class Game {
   private engine: Engine;
   private scene: Scene;
+  private ui: UIManager;
+  private currentTeam: string = 'RED';
+  private isReady: boolean = false;
 
   constructor() {
     // Clear loading screen
@@ -24,6 +28,13 @@ class Game {
 
     // Create scene
     this.scene = this.createScene();
+
+    // Initialize UI
+    this.ui = new UIManager();
+    this.setupUIHandlers();
+
+    // Show home screen initially
+    this.ui.showScreen('home');
 
     // Show FPS counter if debug enabled
     if (clientConfig.debug.showFPS) {
@@ -62,6 +73,143 @@ class Game {
       console.log(`⏱️  Countdown Duration: ${CONFIG.COUNTDOWN_DURATION}ms`);
       console.log(`🛡️  Spawn Protection: ${CONFIG.SPAWN_PROTECTION_DURATION}ms`);
     }
+  }
+
+  /**
+   * Setup UI event handlers
+   */
+  private setupUIHandlers(): void {
+    // Join button clicked
+    this.ui.onJoinClick = () => {
+      const pilotName = this.ui.getPilotName();
+      if (pilotName.length === 0) {
+        alert('Please enter a pilot name');
+        return;
+      }
+
+      console.log(`Joining with name: ${pilotName}`);
+
+      // Show lobby screen (Step 3.3 will connect to server)
+      this.ui.showScreen('lobby');
+
+      // For testing, add some dummy players to roster
+      this.updateTestRoster();
+    };
+
+    // Team selection clicked
+    this.ui.onTeamClick = (team: string) => {
+      this.currentTeam = team;
+      console.log(`Team selected: ${team}`);
+
+      // Update button visual state
+      const redButton = document.getElementById('team-red-button');
+      const blueButton = document.getElementById('team-blue-button');
+
+      if (redButton && blueButton) {
+        if (team === 'RED') {
+          redButton.classList.add('active');
+          blueButton.classList.remove('active');
+        } else {
+          blueButton.classList.add('active');
+          redButton.classList.remove('active');
+        }
+      }
+
+      // Update roster (Step 3.3 will send to server)
+      this.updateTestRoster();
+    };
+
+    // Ready button clicked
+    this.ui.onReadyClick = () => {
+      this.isReady = !this.isReady;
+      this.ui.setReadyButtonState(this.isReady);
+      console.log(`Ready state: ${this.isReady}`);
+
+      // Update roster (Step 3.3 will send to server)
+      this.updateTestRoster();
+
+      // For testing, simulate countdown after ready
+      if (this.isReady) {
+        setTimeout(() => {
+          this.startTestMatch();
+        }, 2000);
+      }
+    };
+
+    // Return to lobby clicked
+    this.ui.onReturnToLobbyClick = () => {
+      console.log('Returning to lobby');
+      this.isReady = false;
+      this.ui.setReadyButtonState(false);
+      this.ui.showScreen('lobby');
+      this.updateTestRoster();
+    };
+  }
+
+  /**
+   * Update roster with test data (will be replaced in Step 3.3)
+   */
+  private updateTestRoster(): void {
+    const pilotName = this.ui.getPilotName();
+    const players = [
+      {
+        name: pilotName,
+        team: this.currentTeam,
+        ready: this.isReady,
+        isBot: false
+      },
+      {
+        name: 'TestPlayer2',
+        team: this.currentTeam === 'RED' ? 'BLUE' : 'RED',
+        ready: false,
+        isBot: false
+      }
+    ];
+
+    this.ui.updateRoster(players);
+  }
+
+  /**
+   * Start test match (will be replaced in Step 3.3)
+   */
+  private startTestMatch(): void {
+    console.log('Starting match...');
+
+    // Show countdown
+    let countdown = 5;
+    this.ui.showScreen('match');
+    this.ui.showCountdown(countdown);
+
+    const countdownInterval = setInterval(() => {
+      countdown--;
+      if (countdown > 0) {
+        this.ui.showCountdown(countdown);
+      } else {
+        this.ui.hideCountdown();
+        clearInterval(countdownInterval);
+
+        // Start match
+        console.log('Match started!');
+
+        // Update HUD periodically
+        setInterval(() => {
+          this.ui.updateHUD(
+            Math.random() * 100 + 50,  // speed
+            Math.random() * 200 + 50,  // altitude
+            Math.floor(Math.random() * 100)  // ammo
+          );
+        }, 100);
+
+        // Show results after 10 seconds (for testing)
+        setTimeout(() => {
+          this.ui.showResults(
+            Math.random() > 0.5 ? 'Red' : 'Blue',
+            Math.floor(Math.random() * 5),
+            Math.floor(Math.random() * 5)
+          );
+        }, 10000);
+      }
+    }, 1000);
   }
 
   private createScene(): Scene {

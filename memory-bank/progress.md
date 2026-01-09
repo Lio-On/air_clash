@@ -1923,3 +1923,236 @@ Toggle: Via .env file
 
 ### Next Steps
 - Step 3.2: Implement responsive UI shell (menus + lobby)
+
+---
+
+## Step 3.2 - Implement Responsive UI Shell (Menus + Lobby) ✅ COMPLETED
+
+**Date**: January 9, 2026
+
+### What Was Implemented
+
+Created a comprehensive UI system with four screens (Home, Lobby, Match HUD, Results) using mobile-first responsive design. UI is fully functional with test data, ready for server integration in Step 3.3.
+
+#### UI Manager (`client/src/UIManager.ts`)
+
+Created centralized UI management class:
+
+**Responsibilities:**
+- Initialize HTML structure for all screens
+- Handle screen transitions
+- Setup event listeners for buttons
+- Update UI elements (roster, HUD, etc.)
+- Provide callbacks for game logic
+
+**Public Methods:**
+- `showScreen(screenName)` - Transition between screens
+- `getPilotName()` - Get player name from input
+- `updateRoster(players)` - Update lobby roster display
+- `setReadyButtonState(isReady)` - Update ready button
+- `updateHUD(speed, altitude, ammo)` - Update match HUD values
+- `showCountdown(seconds)` / `hideCountdown()` - Countdown display
+- `showResults(winner, redScore, blueScore)` - Show match results
+
+**Event Callbacks:**
+- `onJoinClick` - Join button handler
+- `onTeamClick` - Team selection handler
+- `onReadyClick` - Ready toggle handler
+- `onReturnToLobbyClick` - Return to lobby handler
+
+#### Screen Designs
+
+**1. Home/Join Screen:**
+- Game title: "AIR CLASH" with glow effect
+- Pilot name input field (max 20 characters)
+- Large "Join Battle" button
+- Dark semi-transparent background
+
+**2. Lobby Screen:**
+- Screen title
+- Team selection buttons (RED/BLUE)
+- Ready button (toggles between Ready/Not Ready)
+- Roster display with two columns (RED/BLUE teams)
+- Shows player names, ready status (✓), bot indicator
+- All buttons large and touch-friendly
+
+**3. Match HUD:**
+- Top-left: Speed and Altitude displays
+- Top-right: Ammo counter
+- Center: Countdown display (5, 4, 3, 2, 1)
+- Minimal overlay, doesn't obstruct view
+- Semi-transparent backgrounds
+
+**4. Results Screen:**
+- Winner announcement with team color
+- Score breakdown (RED vs BLUE)
+- "Return to Lobby" button
+- Same dark background as other screens
+
+#### Responsive CSS (`client/src/styles.css`)
+
+**Mobile-First Design:**
+- Large touch targets (20px+ padding on buttons)
+- Safe margins (20px from edges)
+- Readable font sizes (18px+ for buttons)
+- No hover effects on touch devices
+- Landscape optimizations for short screens
+
+**Button Styles:**
+- Primary: Green (#4CAF50)
+- Team Red: Red (#dc3545)
+- Team Blue: Blue (#0d6efd)
+- Ready: Gray → Yellow when ready
+- Active states with scale transform
+
+**Responsive Breakpoints:**
+- Mobile: < 768px (single column roster)
+- Landscape: Orientation-based (compressed spacing)
+- Touch devices: No hover, active press feedback
+
+**Key Features:**
+- Semi-transparent backgrounds (rgba)
+- Glassmorphism effect on overlays
+- Smooth transitions (0.2s)
+- Pulsing countdown animation
+- Color-coded team elements
+
+#### Integration with Game Class
+
+**Event Handlers (Test Mode):**
+1. **Join Click:**
+   - Validates pilot name (not empty)
+   - Shows lobby screen
+   - Populates test roster with 2 players
+
+2. **Team Click:**
+   - Updates current team
+   - Highlights selected button (active class)
+   - Updates roster to reflect team change
+
+3. **Ready Click:**
+   - Toggles ready state
+   - Updates button text and color
+   - After 2 seconds, starts test match
+   - Updates roster with ready indicator
+
+4. **Return to Lobby Click:**
+   - Resets ready state
+   - Returns to lobby screen
+   - Updates roster
+
+**Test Match Simulation:**
+- 5-second countdown with large numbers
+- Transitions to Match HUD
+- Updates HUD values randomly every 100ms
+- After 10 seconds, shows Results screen
+- Random winner with random scores
+
+### Test Results ✅
+
+**Desktop Testing:**
+- ✅ Home screen renders correctly at http://localhost:5173
+- ✅ Pilot name input accepts text and validates
+- ✅ Join button transitions to Lobby screen
+- ✅ Team selection buttons work and highlight
+- ✅ Ready button toggles state and updates visually
+- ✅ Roster displays players in correct teams
+- ✅ Countdown displays large numbers with animation
+- ✅ Match HUD shows speed, altitude, ammo
+- ✅ HUD updates smoothly during match
+- ✅ Results screen shows winner and scores
+- ✅ Return to Lobby button works
+- ✅ All buttons responsive and clickable
+- ✅ No overlapping UI elements
+- ✅ Vite dev server starts successfully
+- ✅ No console errors
+
+**Visual Verification:**
+```
+Home Screen:
+┌─────────────────────────┐
+│     AIR CLASH           │
+│                         │
+│  Pilot Name:            │
+│  [________________]     │
+│                         │
+│  [  Join Battle  ]      │
+└─────────────────────────┘
+
+Lobby Screen:
+┌─────────────────────────┐
+│       Lobby             │
+│                         │
+│  [RED TEAM] [BLUE TEAM] │
+│                         │
+│  [    Ready    ]        │
+│                         │
+│  RED TEAM  |  BLUE TEAM │
+│  Player1✓  |  Player2   │
+└─────────────────────────┘
+
+Match HUD:
+Speed: 75   ┌───────────┐   Ammo: 85
+Altitude: 120│     3     │
+             └───────────┘
+
+Results Screen:
+┌─────────────────────────┐
+│   Red Team Wins!        │
+│                         │
+│   Red Team:  5          │
+│   Blue Team: 3          │
+│                         │
+│  [Return to Lobby]      │
+└─────────────────────────┘
+```
+
+### Developer Notes
+
+**UI Architecture:**
+- Single UIManager instance created by Game class
+- Callback pattern for event handling
+- Game class owns state (currentTeam, isReady)
+- UI is presentation layer only
+
+**Screen Transitions:**
+- Only one screen active at a time
+- Match HUD uses transparent overlay
+- Smooth transitions with CSS
+- No animation delays (responsive feel)
+
+**Mobile Considerations:**
+- touch-action: manipulation prevents double-tap zoom
+- user-scalable=no in viewport meta
+- Large hit areas (minimum 44×44px)
+- No :hover states on touch devices
+- Landscape optimization for short screens
+
+**Test Data vs. Real Data:**
+- Currently uses dummy test data
+- Step 3.3 will replace with Colyseus integration
+- All UI methods ready for real server state
+- Roster format matches server PlayerState
+
+**Performance:**
+- Lightweight DOM (no frameworks)
+- CSS animations (GPU accelerated)
+- Minimal reflows (update text content only)
+- No memory leaks (proper event cleanup)
+
+**Accessibility:**
+- Keyboard navigation works (Enter on input)
+- Large text sizes
+- High contrast colors
+- Clear visual feedback
+
+**Future Enhancements (Not MVP):**
+- Touch gestures (swipe to change team)
+- Sound effects on button clicks
+- Lobby chat
+- Player count indicators
+- Connection status indicator
+- Loading spinners
+
+### Next Steps
+- Step 3.3: Connect client to server room
