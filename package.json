@@ -1,0 +1,23 @@
+{
+  "name": "air-clash",
+  "version": "0.1.0",
+  "private": true,
+  "description": "A fast-paced multiplayer airplane dogfight game",
+  "workspaces": [
+    "client",
+    "server",
+    "common"
+  ],
+  "scripts": {
+    "install:all": "npm install",
+    "dev:client": "npm run dev --workspace=client",
+    "dev:server": "npm run dev --workspace=server",
+    "build:client": "npm run build --workspace=client",
+    "build:server": "npm run build --workspace=server",
+    "build:all": "npm run build --workspace=common && npm run build --workspace=server && npm run build --workspace=client"
+  },
+  "engines": {
+    "node": ">=18.0.0",
+    "npm": ">=9.0.0"
+  }
+}
