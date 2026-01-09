@@ -96,13 +96,72 @@ Or run in watch mode during development:
 npm run dev --workspace=common
 ```
 
+### Environment Configuration
+
+Both client and server use environment variables for configuration.
+
+#### Client Environment Variables (`client/.env`)
+
+```bash
+VITE_SERVER_URL=ws://localhost:3000    # WebSocket server URL
+VITE_ENV=development                    # Environment mode
+VITE_DEBUG_FPS=true                     # Show FPS counter
+VITE_DEBUG_COLLIDERS=false              # Show collision boxes (future)
+VITE_DEBUG_VERBOSE=true                 # Verbose console logging
+```
+
+**Files:**
+- `.env` - Development settings (git-ignored, auto-used by Vite)
+- `.env.example` - Template with all available variables
+- `.env.production` - Production defaults (for deployment)
+
+#### Server Environment Variables (`server/.env`)
+
+```bash
+PORT=3000                               # Server port
+NODE_ENV=development                    # Environment mode
+CORS_ORIGIN=http://localhost:5173       # Allowed client origin
+VERBOSE_LOGGING=true                    # Detailed server logs
+```
+
+**Files:**
+- `.env` - Development settings (git-ignored, auto-loaded by dotenv)
+- `.env.example` - Template with all available variables
+- `.env.production` - Production defaults (for deployment)
+
+#### Switching Environments
+
+**Local Development** (default):
+- Client connects to `ws://localhost:3000`
+- Server accepts requests from `http://localhost:5173`
+- Debug features enabled
+
+**Production**:
+1. Update `client/.env.production` with your production server URL
+2. Update `server/.env.production` with your production client URL
+3. Build with `npm run build:all`
+4. Deploy client and server to their respective hosts
+
+**Testing Production Locally:**
+```bash
+# Server: Create .env.production.local
+PORT=3000
+NODE_ENV=production
+CORS_ORIGIN=http://localhost:4173
+VERBOSE_LOGGING=false
+
+# Client: Build and preview
+npm run build --workspace=client
+npm run preview --workspace=client  # Runs on port 4173
+```
+
 ## Connecting Client to Server
 
 By default:
 - **Client**: `http://localhost:5173`
-- **Server**: `http://localhost:3000`
+- **Server**: `http://localhost:3000` (WebSocket at `ws://localhost:3000`)
 
-The client will connect to the server via WebSocket. Server configuration will be added in future steps.
+The client will connect to the server via WebSocket using the URL specified in `VITE_SERVER_URL`.
 
 ## Troubleshooting
 

@@ -39,4 +39,19 @@ export const CONFIG = {
   SPAWN_PROTECTION_DURATION: 2000, // milliseconds
   SERVER_TICK_RATE: 30, // Hz
   SNAPSHOT_RATE: 15, // Hz
+  ROOM_NAME: 'dogfight', // Colyseus room name
 } as const;
+
+/**
+ * Environment types
+ */
+export type Environment = 'development' | 'production';
+
+/**
+ * Debug configuration
+ */
+export interface DebugConfig {
+  showFPS: boolean;
+  showColliders: boolean;
+  verboseLogging: boolean;
+}

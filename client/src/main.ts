@@ -1,5 +1,6 @@
-import { Engine, Scene, HemisphericLight, Vector3, MeshBuilder, FreeCamera, StandardMaterial, Color3, Color4 } from '@babylonjs/core';
+import { Engine, Scene, HemisphericLight, Vector3, MeshBuilder, FreeCamera, StandardMaterial, Color3 } from '@babylonjs/core';
 import { CONFIG, Team, GamePhase } from '@air-clash/common';
+import { clientConfig } from './config';
 
 class Game {
   private engine: Engine;
@@ -24,6 +25,23 @@ class Game {
     // Create scene
     this.scene = this.createScene();
 
+    // Show FPS counter if debug enabled
+    if (clientConfig.debug.showFPS) {
+      this.scene.onBeforeRenderObservable.add(() => {
+        const fps = this.engine.getFps().toFixed();
+        const fpsLabel = document.getElementById('fps-label');
+        if (fpsLabel) {
+          fpsLabel.textContent = `FPS: ${fps}`;
+        }
+      });
+
+      // Create FPS overlay
+      const fpsDiv = document.createElement('div');
+      fpsDiv.id = 'fps-label';
+      fpsDiv.style.cssText = 'position:fixed;top:10px;left:10px;color:#0f0;font-family:monospace;font-size:16px;z-index:1000;';
+      document.body.appendChild(fpsDiv);
+    }
+
     // Run render loop
     this.engine.runRenderLoop(() => {
       this.scene.render();
@@ -34,14 +52,16 @@ class Game {
       this.engine.resize();
     });
 
-    console.log('✅ Air Clash Client initialized');
-    console.log('✅ Successfully imported CONFIG from @air-clash/common');
-    console.log(`📊 Max Players Per Team: ${CONFIG.MAX_PLAYERS_PER_TEAM}`);
-    console.log(`⏱️  Countdown Duration: ${CONFIG.COUNTDOWN_DURATION}ms`);
-    console.log(`🛡️  Spawn Protection: ${CONFIG.SPAWN_PROTECTION_DURATION}ms`);
-    console.log(`🔵 Team.BLUE = ${Team.BLUE}`);
-    console.log(`🔴 Team.RED = ${Team.RED}`);
-    console.log(`📍 GamePhase.LOBBY = ${GamePhase.LOBBY}`);
+    // Log configuration
+    if (clientConfig.debug.verboseLogging) {
+      console.log('✅ Air Clash Client initialized');
+      console.log(`🌍 Environment: ${clientConfig.environment}`);
+      console.log(`🔗 Server URL: ${clientConfig.serverUrl}`);
+      console.log(`🎮 Room Name: ${CONFIG.ROOM_NAME}`);
+      console.log(`📊 Max Players Per Team: ${CONFIG.MAX_PLAYERS_PER_TEAM}`);
+      console.log(`⏱️  Countdown Duration: ${CONFIG.COUNTDOWN_DURATION}ms`);
+      console.log(`🛡️  Spawn Protection: ${CONFIG.SPAWN_PROTECTION_DURATION}ms`);
+    }
   }
 
   private createScene(): Scene {

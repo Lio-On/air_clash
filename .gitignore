@@ -11,6 +11,10 @@ dist/
 .env.local
 .env.*.local
 
+# Keep example and template env files
+!.env.example
+!.env.production
+
 # Editor directories and files
 .vscode/
 .idea/
