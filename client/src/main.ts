@@ -17,6 +17,14 @@ class Game {
   private countdownInterval: any = null;
   private playerMeshes: Map<string, Mesh> = new Map();
 
+  // Input state
+  private inputState = {
+    up: false,      // W or Arrow Up
+    down: false,    // S or Arrow Down
+    left: false,    // A or Arrow Left
+    right: false,   // D or Arrow Right
+  };
+
   constructor() {
     // Clear loading screen
     const appDiv = document.getElementById('app')!;
@@ -65,15 +73,19 @@ class Game {
 
     // Run render loop
     this.engine.runRenderLoop(() => {
-      this.updatePlayerMeshes();
-      this.updateCamera();
-      this.scene.render();
+      this.sendInput();          // Send keyboard input to server
+      this.updatePlayerMeshes(); // Update mesh positions from server
+      this.updateCamera();       // Update camera to follow local player
+      this.scene.render();       // Render the scene
     });
 
     // Handle window resize
     window.addEventListener('resize', () => {
       this.engine.resize();
     });
+
+    // Setup keyboard controls
+    this.setupKeyboardControls();
 
     // Log configuration
     if (clientConfig.debug.verboseLogging) {
@@ -152,6 +164,68 @@ class Game {
       console.log('Return to lobby not implemented in MVP');
       // In future: disconnect and rejoin
     };
+  }
+
+  /**
+   * Setup keyboard controls
+   */
+  private setupKeyboardControls(): void {
+    // Key down event
+    window.addEventListener('keydown', (event: KeyboardEvent) => {
+      switch (event.key.toLowerCase()) {
+        case 'w':
+        case 'arrowup':
+          this.inputState.up = true;
+          break;
+        case 's':
+        case 'arrowdown':
+          this.inputState.down = true;
+          break;
+        case 'a':
+        case 'arrowleft':
+          this.inputState.left = true;
+          break;
+        case 'd':
+        case 'arrowright':
+          this.inputState.right = true;
+          break;
+      }
+    });
+
+    // Key up event
+    window.addEventListener('keyup', (event: KeyboardEvent) => {
+      switch (event.key.toLowerCase()) {
+        case 'w':
+        case 'arrowup':
+          this.inputState.up = false;
+          break;
+        case 's':
+        case 'arrowdown':
+          this.inputState.down = false;
+          break;
+        case 'a':
+        case 'arrowleft':
+          this.inputState.left = false;
+          break;
+        case 'd':
+        case 'arrowright':
+          this.inputState.right = false;
+          break;
+      }
+    });
+  }
+
+  /**
+   * Send input state to server
+   */
+  private sendInput(): void {
+    if (!this.room) return;
+
+    // Only send input during match
+    if (this.room.state.phase !== GamePhase.IN_MATCH) return;
+
+    // Send current input state to server
+    this.room.send('playerInput', this.inputState);
   }
 
   /**

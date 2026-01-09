@@ -33,6 +33,13 @@ export class DogfightRoom extends Room<RoomState> {
     // Register message handlers
     this.setupMessageHandlers();
 
+    // Setup physics simulation loop (30Hz = ~33ms per tick)
+    const tickRate = CONFIG.SERVER_TICK_RATE || 30;
+    const deltaTime = 1 / tickRate;
+    this.setSimulationInterval((deltaTime) => {
+      this.updatePhysics(deltaTime / 1000); // Convert ms to seconds
+    }, 1000 / tickRate);
+
     console.log(`📍 Room phase: ${this.state.phase}`);
   }
 
@@ -117,6 +124,21 @@ export class DogfightRoom extends Room<RoomState> {
 
       // Check if all humans are ready and fill bots if needed
       this.checkAndFillBots();
+    });
+
+    // Player input (flight controls)
+    this.onMessage('playerInput', (client, message: { up: boolean; down: boolean; left: boolean; right: boolean }) => {
+      const player = this.state.players.get(client.sessionId);
+      if (!player) return;
+
+      // Only process input during match
+      if (this.state.phase !== GamePhase.IN_MATCH) return;
+
+      // Only process input for alive players
+      if (!player.alive) return;
+
+      // Store input state on player (will be processed in physics update)
+      (player as any).input = message;
     });
   }
 
@@ -482,6 +504,119 @@ export class DogfightRoom extends Room<RoomState> {
     player.ready = true; // Bots are always ready
 
     console.log(`🤖 ${oldName} → ${botName} (team ${team})`);
+  }
+
+  /**
+   * Update physics for all players
+   */
+  private updatePhysics(deltaTime: number): void {
+    // Only update during match
+    if (this.state.phase !== GamePhase.IN_MATCH) return;
+
+    // Physics constants (m/s and m/s²)
+    const PITCH_SPEED = 1.5;        // Radians per second (pitch up/down)
+    const YAW_SPEED = 1.0;          // Radians per second (turn left/right)
+    const FORWARD_ACCELERATION = 20; // m/s² (throttle)
+    const AIR_RESISTANCE = 0.5;     // Drag coefficient
+    const MIN_SPEED = 30;           // Minimum speed (m/s)
+    const MAX_SPEED = 100;          // Maximum speed (m/s)
+    const GRAVITY = -9.8;           // m/s² (downward)
+
+    this.state.players.forEach((player, sessionId) => {
+      // Skip dead players
+      if (!player.alive) return;
+
+      // Get player input (if exists)
+      const input = (player as any).input || { up: false, down: false, left: false, right: false };
+
+      // Pitch control (up/down)
+      if (input.up) {
+        player.rotX += PITCH_SPEED * deltaTime;
+      }
+      if (input.down) {
+        player.rotX -= PITCH_SPEED * deltaTime;
+      }
+
+      // Yaw control (left/right)
+      if (input.left) {
+        player.rotY -= YAW_SPEED * deltaTime;
+      }
+      if (input.right) {
+        player.rotY += YAW_SPEED * deltaTime;
+      }
+
+      // Clamp pitch to prevent loop-de-loops
+      player.rotX = Math.max(-Math.PI / 3, Math.min(Math.PI / 3, player.rotX));
+
+      // Forward thrust (always accelerating forward)
+      const forward = {
+        x: Math.sin(player.rotY),
+        y: Math.sin(player.rotX),
+        z: Math.cos(player.rotY)
+      };
+
+      // Apply forward acceleration
+      player.velocityX += forward.x * FORWARD_ACCELERATION * deltaTime;
+      player.velocityY += forward.y * FORWARD_ACCELERATION * deltaTime;
+      player.velocityZ += forward.z * FORWARD_ACCELERATION * deltaTime;
+
+      // Apply gravity
+      player.velocityY += GRAVITY * deltaTime;
+
+      // Apply air resistance
+      const speed = Math.sqrt(
+        player.velocityX ** 2 +
+        player.velocityY ** 2 +
+        player.velocityZ ** 2
+      );
+
+      if (speed > 0) {
+        const drag = AIR_RESISTANCE * deltaTime;
+        player.velocityX *= (1 - drag);
+        player.velocityY *= (1 - drag);
+        player.velocityZ *= (1 - drag);
+      }
+
+      // Enforce speed limits
+      const currentSpeed = Math.sqrt(
+        player.velocityX ** 2 +
+        player.velocityY ** 2 +
+        player.velocityZ ** 2
+      );
+
+      if (currentSpeed > MAX_SPEED) {
+        const scale = MAX_SPEED / currentSpeed;
+        player.velocityX *= scale;
+        player.velocityY *= scale;
+        player.velocityZ *= scale;
+      } else if (currentSpeed < MIN_SPEED && currentSpeed > 0) {
+        const scale = MIN_SPEED / currentSpeed;
+        player.velocityX *= scale;
+        player.velocityY *= scale;
+        player.velocityZ *= scale;
+      }
+
+      // Update position based on velocity
+      player.posX += player.velocityX * deltaTime;
+      player.posY += player.velocityY * deltaTime;
+      player.posZ += player.velocityZ * deltaTime;
+
+      // Ground collision (simple altitude check)
+      if (player.posY < 10) {
+        player.posY = 10;
+        player.velocityY = Math.max(0, player.velocityY); // Stop downward velocity
+      }
+
+      // Arena boundaries (2000m x 2000m, wraps around)
+      const arenaRadius = CONFIG.ARENA_SIZE / 2;
+      if (Math.abs(player.posX) > arenaRadius || Math.abs(player.posZ) > arenaRadius) {
+        // Wrap to other side
+        if (player.posX > arenaRadius) player.posX = -arenaRadius;
+        if (player.posX < -arenaRadius) player.posX = arenaRadius;
+        if (player.posZ > arenaRadius) player.posZ = -arenaRadius;
+        if (player.posZ < -arenaRadius) player.posZ = arenaRadius;
+      }
+    });
   }
 
   /**
