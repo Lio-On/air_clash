@@ -2,13 +2,18 @@ import { Engine, Scene, HemisphericLight, DirectionalLight, Vector3, MeshBuilder
 import { CONFIG, Team, GamePhase } from '@air-clash/common';
 import { clientConfig } from './config';
 import { UIManager } from './UIManager';
+import { Client, Room } from 'colyseus.js';
 
 class Game {
   private engine: Engine;
   private scene: Scene;
   private ui: UIManager;
+  private client: Client;
+  private room: Room | null = null;
+  private sessionId: string = '';
   private currentTeam: string = 'RED';
   private isReady: boolean = false;
+  private countdownInterval: any = null;
 
   constructor() {
     // Clear loading screen
@@ -28,6 +33,9 @@ class Game {
 
     // Create scene
     this.scene = this.createScene();
+
+    // Initialize Colyseus client
+    this.client = new Client(clientConfig.serverUrl);
 
     // Initialize UI
     this.ui = new UIManager();
@@ -79,8 +87,8 @@ class Game {
    * Setup UI event handlers
    */
   private setupUIHandlers(): void {
-    // Join button clicked
-    this.ui.onJoinClick = () => {
+    // Join button clicked - connect to server
+    this.ui.onJoinClick = async () => {
       const pilotName = this.ui.getPilotName();
       if (pilotName.length === 0) {
         alert('Please enter a pilot name');
@@ -89,15 +97,22 @@ class Game {
 
       console.log(`Joining with name: ${pilotName}`);
 
-      // Show lobby screen (Step 3.3 will connect to server)
-      this.ui.showScreen('lobby');
+      try {
+        // Connect to room
+        await this.joinRoom(pilotName);
 
-      // For testing, add some dummy players to roster
-      this.updateTestRoster();
+        // Show lobby screen
+        this.ui.showScreen('lobby');
+      } catch (error) {
+        console.error('Failed to join room:', error);
+        alert('Failed to connect to server. Please try again.');
+      }
     };
 
-    // Team selection clicked
+    // Team selection clicked - send to server
     this.ui.onTeamClick = (team: string) => {
+      if (!this.room) return;
+
       this.currentTeam = team;
       console.log(`Team selected: ${team}`);
 
@@ -115,101 +130,227 @@ class Game {
         }
       }
 
-      // Update roster (Step 3.3 will send to server)
-      this.updateTestRoster();
+      // Send team choice to server
+      this.room.send('chooseTeam', { team });
     };
 
-    // Ready button clicked
+    // Ready button clicked - send to server
     this.ui.onReadyClick = () => {
-      this.isReady = !this.isReady;
-      this.ui.setReadyButtonState(this.isReady);
-      console.log(`Ready state: ${this.isReady}`);
+      if (!this.room) return;
 
-      // Update roster (Step 3.3 will send to server)
-      this.updateTestRoster();
-
-      // For testing, simulate countdown after ready
-      if (this.isReady) {
-        setTimeout(() => {
-          this.startTestMatch();
-        }, 2000);
-      }
+      // Toggle ready state (server will echo back the change)
+      this.room.send('toggleReady');
+      console.log('Toggling ready state');
     };
 
-    // Return to lobby clicked
+    // Return to lobby clicked (not implemented in MVP)
     this.ui.onReturnToLobbyClick = () => {
-      console.log('Returning to lobby');
-      this.isReady = false;
-      this.ui.setReadyButtonState(false);
-      this.ui.showScreen('lobby');
-      this.updateTestRoster();
+      console.log('Return to lobby not implemented in MVP');
+      // In future: disconnect and rejoin
     };
   }
 
   /**
-   * Update roster with test data (will be replaced in Step 3.3)
+   * Join or create a Colyseus room
    */
-  private updateTestRoster(): void {
-    const pilotName = this.ui.getPilotName();
-    const players = [
-      {
-        name: pilotName,
-        team: this.currentTeam,
-        ready: this.isReady,
-        isBot: false
-      },
-      {
-        name: 'TestPlayer2',
-        team: this.currentTeam === 'RED' ? 'BLUE' : 'RED',
-        ready: false,
-        isBot: false
+  private async joinRoom(pilotName: string): Promise<void> {
+    console.log(`Connecting to ${clientConfig.serverUrl}...`);
+
+    try {
+      this.room = await this.client.joinOrCreate(CONFIG.ROOM_NAME, { name: pilotName });
+      this.sessionId = this.room.sessionId;
+
+      console.log(`✅ Joined room ${this.room.id} as ${this.sessionId}`);
+
+      // Setup state listeners
+      this.setupRoomListeners();
+    } catch (error) {
+      console.error('❌ Failed to join room:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Setup room state listeners
+   */
+  private setupRoomListeners(): void {
+    if (!this.room) return;
+
+    // Listen to state changes
+    this.room.onStateChange((state) => {
+      console.log('Room state updated:', state.phase);
+      this.handleStateChange(state);
+    });
+
+    // Listen to player changes
+    this.room.state.players.onAdd = (player, sessionId) => {
+      console.log(`Player added: ${player.name} (${sessionId})`);
+      this.updateRoster();
+    };
+
+    this.room.state.players.onRemove = (player, sessionId) => {
+      console.log(`Player removed: ${player.name} (${sessionId})`);
+      this.updateRoster();
+    };
+
+    this.room.state.players.onChange = (player, sessionId) => {
+      this.updateRoster();
+    };
+
+    // Listen to error messages
+    this.room.onMessage('error', (message) => {
+      console.error('Server error:', message.message);
+      alert(message.message);
+    });
+
+    // Listen to room leave
+    this.room.onLeave((code) => {
+      console.log(`Left room with code ${code}`);
+      this.room = null;
+    });
+  }
+
+  /**
+   * Handle room state changes (phase transitions)
+   */
+  private handleStateChange(state: any): void {
+    const phase = state.phase;
+
+    // Update roster whenever state changes
+    this.updateRoster();
+
+    // Handle phase-specific logic
+    if (phase === GamePhase.LOBBY) {
+      // Already in lobby
+    } else if (phase === GamePhase.COUNTDOWN) {
+      this.handleCountdownPhase(state);
+    } else if (phase === GamePhase.IN_MATCH) {
+      this.handleMatchPhase(state);
+    } else if (phase === GamePhase.RESULTS) {
+      this.handleResultsPhase(state);
+    }
+  }
+
+  /**
+   * Handle countdown phase
+   */
+  private handleCountdownPhase(state: any): void {
+    console.log('Countdown started!');
+
+    // Clear any existing countdown
+    if (this.countdownInterval) {
+      clearInterval(this.countdownInterval);
+    }
+
+    // Calculate remaining time
+    const countdownStart = state.countdownStart;
+    const countdownDuration = CONFIG.COUNTDOWN_DURATION;
+    const elapsed = Date.now() - countdownStart;
+    let remaining = Math.ceil((countdownDuration - elapsed) / 1000);
+
+    if (remaining > 0) {
+      this.ui.showScreen('match');
+      this.ui.showCountdown(remaining);
+
+      this.countdownInterval = setInterval(() => {
+        remaining--;
+        if (remaining > 0) {
+          this.ui.showCountdown(remaining);
+        } else {
+          this.ui.hideCountdown();
+          clearInterval(this.countdownInterval);
+          this.countdownInterval = null;
+        }
+      }, 1000);
+    } else {
+      this.ui.hideCountdown();
+    }
+  }
+
+  /**
+   * Handle match phase
+   */
+  private handleMatchPhase(state: any): void {
+    console.log('Match started!');
+
+    // Make sure we're showing the match HUD
+    this.ui.showScreen('match');
+    this.ui.hideCountdown();
+
+    // Get local player's state
+    const localPlayer = state.players.get(this.sessionId);
+    if (localPlayer) {
+      // Update HUD with player's stats
+      this.ui.updateHUD(
+        Math.sqrt(localPlayer.velocityX ** 2 + localPlayer.velocityY ** 2 + localPlayer.velocityZ ** 2),
+        localPlayer.posY,
+        100  // Ammo (placeholder, will be added later)
+      );
+    }
+  }
+
+  /**
+   * Handle results phase
+   */
+  private handleResultsPhase(state: any): void {
+    console.log('Match ended!');
+
+    // Count alive players per team
+    let redAlive = 0;
+    let blueAlive = 0;
+
+    state.players.forEach((player: any) => {
+      if (player.alive) {
+        if (player.team === 'RED') redAlive++;
+        else blueAlive++;
       }
-    ];
+    });
+
+    // Determine winner
+    const winner = redAlive > blueAlive ? 'Red' : blueAlive > redAlive ? 'Blue' : 'Tie';
+
+    this.ui.showResults(winner, redAlive, blueAlive);
+  }
+
+  /**
+   * Update roster display from room state
+   */
+  private updateRoster(): void {
+    if (!this.room || !this.room.state) return;
+
+    const players: any[] = [];
+    this.room.state.players.forEach((player: any, sessionId: string) => {
+      players.push({
+        name: player.name,
+        team: player.team,
+        ready: player.ready,
+        isBot: player.isBot,
+        sessionId: sessionId
+      });
+
+      // Update local player's state
+      if (sessionId === this.sessionId) {
+        this.currentTeam = player.team;
+        this.isReady = player.ready;
+        this.ui.setReadyButtonState(player.ready);
+
+        // Update team button highlights
+        const redButton = document.getElementById('team-red-button');
+        const blueButton = document.getElementById('team-blue-button');
+
+        if (redButton && blueButton) {
+          if (player.team === 'RED') {
+            redButton.classList.add('active');
+            blueButton.classList.remove('active');
+          } else {
+            blueButton.classList.add('active');
+            redButton.classList.remove('active');
+          }
+        }
+      }
+    });
 
     this.ui.updateRoster(players);
-  }
-
-  /**
-   * Start test match (will be replaced in Step 3.3)
-   */
-  private startTestMatch(): void {
-    console.log('Starting match...');
-
-    // Show countdown
-    let countdown = 5;
-    this.ui.showScreen('match');
-    this.ui.showCountdown(countdown);
-
-    const countdownInterval = setInterval(() => {
-      countdown--;
-      if (countdown > 0) {
-        this.ui.showCountdown(countdown);
-      } else {
-        this.ui.hideCountdown();
-        clearInterval(countdownInterval);
-
-        // Start match
-        console.log('Match started!');
-
-        // Update HUD periodically
-        setInterval(() => {
-          this.ui.updateHUD(
-            Math.random() * 100 + 50,  // speed
-            Math.random() * 200 + 50,  // altitude
-            Math.floor(Math.random() * 100)  // ammo
-          );
-        }, 100);
-
-        // Show results after 10 seconds (for testing)
-        setTimeout(() => {
-          this.ui.showResults(
-            Math.random() > 0.5 ? 'Red' : 'Blue',
-            Math.floor(Math.random() * 5),
-            Math.floor(Math.random() * 5)
-          );
-        }, 10000);
-      }
-    }, 1000);
   }
 
   private createScene(): Scene {
