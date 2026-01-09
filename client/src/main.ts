@@ -533,6 +533,13 @@ class Game {
         mesh = this.createAirplaneMesh(sessionId, player.team);
         this.playerMeshes.set(sessionId, mesh);
         console.log(`✈️  Created mesh for ${player.name} (${player.team}) at session ${sessionId}`);
+
+        // If this is the local player, immediately position camera near them
+        if (sessionId === this.sessionId) {
+          console.log(`📷 Positioning camera at local player's spawn position: (${player.posX}, ${player.posY}, ${player.posZ})`);
+          this.camera.position.set(player.posX, player.posY + 10, player.posZ - 30);
+          this.camera.setTarget(new Vector3(player.posX, player.posY, player.posZ));
+        }
       }
 
       // Update position
