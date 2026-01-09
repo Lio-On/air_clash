@@ -428,6 +428,13 @@ export class DogfightRoom extends Room<RoomState> {
     this.state.phase = GamePhase.IN_MATCH;
     this.state.matchStart = Date.now();
 
+    // Reset scores and kill counts
+    this.state.scoreRed = 0;
+    this.state.scoreBlue = 0;
+    this.state.players.forEach((player) => {
+      player.kills = 0;
+    });
+
     console.log(`🎮 Match started!`);
     console.log(`📍 Room phase: ${this.state.phase}`);
 
@@ -553,8 +560,8 @@ export class DogfightRoom extends Room<RoomState> {
     // Check boundary avoidance first (highest priority)
     const distanceFromCenter = Math.sqrt(bot.posX ** 2 + bot.posZ ** 2);
     if (distanceFromCenter > BOUNDARY_DISTANCE) {
-      // Turn toward center
-      const angleToCenter = Math.atan2(0 - bot.posX, 0 - bot.posZ);
+      // Turn toward center (add 180° to match inverted physics forward vector)
+      const angleToCenter = Math.atan2(0 - bot.posX, 0 - bot.posZ) + Math.PI;
       const angleDiff = this.normalizeAngle(angleToCenter - bot.rotY);
 
       if (angleDiff > 0.1) {
@@ -594,7 +601,7 @@ export class DogfightRoom extends Room<RoomState> {
 
     // If no enemy found, fly toward center
     if (!nearestEnemy) {
-      const angleToCenter = Math.atan2(0 - bot.posX, 0 - bot.posZ);
+      const angleToCenter = Math.atan2(0 - bot.posX, 0 - bot.posZ) + Math.PI;
       const angleDiff = this.normalizeAngle(angleToCenter - bot.rotY);
 
       if (angleDiff > 0.1) {
@@ -618,8 +625,8 @@ export class DogfightRoom extends Room<RoomState> {
     const dy = nearestEnemy.posY - bot.posY;
     const dz = nearestEnemy.posZ - bot.posZ;
 
-    // Calculate desired yaw (horizontal angle)
-    const desiredYaw = Math.atan2(dx, dz);
+    // Calculate desired yaw (horizontal angle) - add 180° to match inverted physics forward vector
+    const desiredYaw = Math.atan2(dx, dz) + Math.PI;
 
     // Add imperfect aim (randomness)
     const aimError = (Math.random() - 0.5) * AIM_IMPERFECTION;
@@ -637,7 +644,7 @@ export class DogfightRoom extends Room<RoomState> {
 
     // Calculate desired pitch (vertical angle)
     const horizontalDistance = Math.sqrt(dx ** 2 + dz ** 2);
-    const desiredPitch = Math.atan2(-dy, horizontalDistance); // Negative because up is negative rotX
+    const desiredPitch = Math.atan2(-dy, horizontalDistance); // Negative dy because up is negative rotX
 
     // Pitch control (aim at target vertically)
     const pitchDiff = this.normalizeAngle(desiredPitch - bot.rotX);
@@ -733,7 +740,7 @@ export class DogfightRoom extends Room<RoomState> {
       // Negate X/Z to point out nose instead of tail (180° correction)
       const forward = {
         x: -Math.sin(player.rotY) * Math.cos(player.rotX),  // Negate X
-        y: Math.sin(player.rotX),                           // Keep Y (pitch is correct)
+        y: Math.sin(player.rotX),                           // Keep Y (pitch is correct for human controls)
         z: -Math.cos(player.rotY) * Math.cos(player.rotX)   // Negate Z
       };
 
@@ -847,9 +854,23 @@ export class DogfightRoom extends Room<RoomState> {
           // Hit! Kill the player
           player.alive = false;
           projectilesToRemove.push(id);
-          console.log(`💥 ${projectile.ownerId} hit ${targetId}!`);
 
-          // Update alive counts
+          // Get the killer and award kill
+          const killer = this.state.players.get(projectile.ownerId);
+          if (killer) {
+            killer.kills++;
+
+            // Increment team score
+            if (killer.team === 'RED') {
+              this.state.scoreRed++;
+            } else {
+              this.state.scoreBlue++;
+            }
+
+            console.log(`💥 ${killer.name} hit ${player.name}! (${killer.team} score: ${killer.team === 'RED' ? this.state.scoreRed : this.state.scoreBlue})`);
+          }
+
+          // Update alive counts and check for match end
           this.updateAliveCounts();
         }
       });
@@ -875,7 +896,7 @@ export class DogfightRoom extends Room<RoomState> {
     // Must match physics forward vector (negated to point out nose)
     const forward = {
       x: -Math.sin(player.rotY) * Math.cos(player.rotX),  // Negate X
-      y: Math.sin(player.rotX),                           // Keep Y
+      y: Math.sin(player.rotX),                           // Keep Y (matches physics)
       z: -Math.cos(player.rotY) * Math.cos(player.rotX)   // Negate Z
     };
 
@@ -915,8 +936,8 @@ export class DogfightRoom extends Room<RoomState> {
     this.state.aliveRed = redAlive;
     this.state.aliveBlue = blueAlive;
 
-    // Check for match end (one team eliminated)
-    if (redAlive === 0 || blueAlive === 0) {
+    // Check for match end (one team eliminated OR one team reached 5 kills)
+    if (redAlive === 0 || blueAlive === 0 || this.state.scoreRed >= 5 || this.state.scoreBlue >= 5) {
       this.endMatch();
     }
   }
@@ -928,8 +949,13 @@ export class DogfightRoom extends Room<RoomState> {
     if (this.state.phase !== GamePhase.IN_MATCH) return;
 
     console.log('🏁 Match ended!');
-    console.log(`   Red alive: ${this.state.aliveRed}`);
-    console.log(`   Blue alive: ${this.state.aliveBlue}`);
+    console.log(`   Final Score: Red ${this.state.scoreRed} - ${this.state.scoreBlue} Blue`);
+    console.log(`   Survivors: Red ${this.state.aliveRed} - ${this.state.aliveBlue} Blue`);
+
+    // Determine winner
+    const winner = this.state.scoreRed > this.state.scoreBlue ? 'RED' :
+                   this.state.scoreBlue > this.state.scoreRed ? 'BLUE' : 'TIE';
+    console.log(`   Winner: ${winner}`);
 
     this.state.phase = GamePhase.RESULTS;
 

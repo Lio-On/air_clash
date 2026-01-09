@@ -48,4 +48,16 @@ export class RoomState extends Schema {
    */
   @type('number')
   aliveBlue: number = 0;
+
+  /**
+   * Kill score for Red team
+   */
+  @type('number')
+  scoreRed: number = 0;
+
+  /**
+   * Kill score for Blue team
+   */
+  @type('number')
+  scoreBlue: number = 0;
 }

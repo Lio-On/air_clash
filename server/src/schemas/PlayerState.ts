@@ -60,6 +60,10 @@ export class PlayerState extends Schema {
   @type('number')
   spawnProtectionEnd: number = 0; // Timestamp when protection ends
 
+  // Kill counter
+  @type('number')
+  kills: number = 0;
+
   constructor(id: string, name: string, team: Team, isBot: boolean = false) {
     super();
     this.id = id;
@@ -68,5 +72,6 @@ export class PlayerState extends Schema {
     this.isBot = isBot;
     this.ready = false;
     this.alive = false;
+    this.kills = 0;
   }
 }
