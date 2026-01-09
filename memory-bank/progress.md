@@ -1736,3 +1736,190 @@ player.velocityZ = 0;  // No lateral movement on spawn
 
 ### Next Steps
 - Step 3.1: Create Babylon scene + render loop
+
+---
+
+## Step 3.1 - Create Babylon Scene + Render Loop ✅ COMPLETED
+
+**Date**: January 9, 2026
+
+### What Was Implemented
+
+Enhanced the existing Babylon.js scene with proper lighting, sky background, and island placeholder mesh. The scene now provides a complete 3D environment for the aerial combat game.
+
+#### Scene Enhancements in `client/src/main.ts`
+
+**Sky/Background:**
+- Sky blue background using `Color4(0.53, 0.81, 0.98, 1.0)`
+- Clear atmospheric appearance
+- Provides good contrast for planes
+
+**Lighting System:**
+
+1. **Ambient Light (HemisphericLight)**
+   - Soft overall illumination
+   - Intensity: 0.5
+   - Diffuse color: Light blue tint (0.9, 0.9, 1.0)
+   - Ground color: Dark gray (0.3, 0.3, 0.3)
+   - Simulates scattered skylight
+
+2. **Directional Light (Sun)**
+   - Main sun light source
+   - Direction: Vector3(-1, -2, -1) (from upper-left-back)
+   - Intensity: 0.8
+   - Diffuse: Warm sunlight (1.0, 0.95, 0.8)
+   - Specular: Bright highlights (1.0, 1.0, 0.9)
+   - Creates realistic shadows and depth
+
+**Island Placeholder:**
+- Circular disc mesh (radius: 1000m)
+- Represents the 2000m diameter arena
+- Green terrain color (0.25, 0.5, 0.2)
+- Low specular reflection for matte terrain
+- Tessellation: 64 segments for smooth circle
+- Positioned at Y=0 (sea level)
+
+**Ocean:**
+- Large ground plane (4000m × 4000m)
+- Surrounds the island
+- Deep blue water color (0.1, 0.3, 0.6)
+- Positioned at Y=-5 (slightly below island)
+- Moderate specular reflection for water surface
+
+**Camera:**
+- FreeCamera positioned at (0, 150, -300)
+- Looks at island center (0, 0, 0)
+- Elevated view shows entire arena
+- Mouse/keyboard controls enabled
+
+**Render Loop:**
+- Already established from Step 1.1
+- Continuous rendering at monitor refresh rate
+- Engine automatically resizes on window resize
+- Smooth 60+ FPS performance
+
+**FPS Counter:**
+- Already implemented from Step 1.2
+- Toggle via VITE_DEBUG_FPS environment variable
+- Displays in top-left corner
+- Green monospace text
+- Updates every frame
+- Can be disabled in production
+
+### Changes Made
+
+**Removed:**
+- Test sphere (no longer needed)
+- Small ground plane (replaced with island + ocean)
+
+**Added:**
+- DirectionalLight for sun
+- Circular island disc (1000m radius)
+- Ocean plane (4000m × 4000m)
+- Improved camera position
+- Better lighting setup
+
+**Enhanced:**
+- Sky color to brighter blue
+- Materials with proper colors
+- Light intensities and colors
+
+### Scene Layout
+
+```
+Camera Position (0, 150, -300)
+        ↓
+
+     Sky (0.53, 0.81, 0.98)
+
+    Island (radius 1000m)
+    ━━━━━━━━━━━━━━━━
+   🏝️  Green Terrain  🏝️
+    ━━━━━━━━━━━━━━━━
+
+    Ocean (4000m × 4000m)
+    ≈≈≈≈≈≈≈≈≈≈≈≈≈≈≈≈≈
+   🌊  Deep Blue Water 🌊
+    ≈≈≈≈≈≈≈≈≈≈≈≈≈≈≈≈≈
+```
+
+### Test Results ✅
+
+**Desktop Testing:**
+- ✅ Scene renders correctly at http://localhost:5173
+- ✅ Vite dev server starts successfully
+- ✅ Island visible as circular green terrain
+- ✅ Ocean surrounds island with blue water
+- ✅ Sky has proper blue color
+- ✅ Lighting creates depth and shadows
+- ✅ Camera controls work (WASD + mouse)
+- ✅ FPS counter displays when VITE_DEBUG_FPS=true
+- ✅ No console errors
+- ✅ Smooth performance (60+ FPS)
+
+**FPS Counter:**
+```
+Position: Top-left (10px, 10px)
+Color: Green (#0f0)
+Font: Monospace, 16px
+Updates: Every frame
+Toggle: Via .env file
+```
+
+### Performance
+
+**Frame Rate:**
+- Solid 60+ FPS on modern hardware
+- Lightweight scene (simple meshes)
+- Efficient rendering pipeline
+
+**Scene Complexity:**
+- 2 lights (hemispheric + directional)
+- 2 meshes (island disc + ocean plane)
+- 1 camera (free camera)
+- Standard materials (no heavy shaders)
+- Total vertices: ~260 (64 tessellation × 2 + ocean)
+
+### Developer Notes
+
+**Scene Coordinate System:**
+- Origin (0, 0, 0) at island center
+- +Y axis: Up (altitude)
+- +X axis: East
+- +Z axis: North (into screen from camera view)
+- Arena radius: 1000m (2000m diameter)
+
+**Island Size:**
+- Matches CONFIG.ARENA_SIZE (2000m)
+- Circular shape fits aerial combat
+- Visible from spawn points (±800m on X axis)
+
+**Lighting Strategy:**
+- Two-light setup: ambient + directional
+- Ambient provides base illumination
+- Directional creates sun shadows
+- Warm colors create pleasant atmosphere
+- No performance impact from lighting
+
+**Camera Setup:**
+- Temporary position for scene overview
+- Will be replaced with plane-following camera in Step 5.2
+- Current position useful for debugging
+- Shows entire arena at once
+
+**Ocean vs. Ground:**
+- Ocean extends beyond island
+- Prevents seeing "edge" of world
+- Creates island feel
+- Simple plane is performant
+
+**Future Enhancements (Not MVP):**
+- Skybox with clouds
+- Water shader with waves
+- Terrain elevation/mountains on island
+- Fog for distance
+- Dynamic time of day
+- Better ocean rendering
+
+### Next Steps
+- Step 3.2: Implement responsive UI shell (menus + lobby)

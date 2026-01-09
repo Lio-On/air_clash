@@ -1,4 +1,4 @@
-import { Engine, Scene, HemisphericLight, Vector3, MeshBuilder, FreeCamera, StandardMaterial, Color3 } from '@babylonjs/core';
+import { Engine, Scene, HemisphericLight, DirectionalLight, Vector3, MeshBuilder, FreeCamera, StandardMaterial, Color3, Color4 } from '@babylonjs/core';
 import { CONFIG, Team, GamePhase } from '@air-clash/common';
 import { clientConfig } from './config';
 
@@ -66,31 +66,53 @@ class Game {
 
   private createScene(): Scene {
     const scene = new Scene(this.engine);
-    scene.clearColor.set(0.53, 0.81, 0.92, 1); // Sky blue
 
-    // Camera
-    const camera = new FreeCamera('camera', new Vector3(0, 5, -10), scene);
-    camera.setTarget(Vector3.Zero());
+    // Sky background - light blue sky
+    scene.clearColor = new Color4(0.53, 0.81, 0.98, 1.0);
+
+    // Camera - positioned above and behind to see the island
+    const camera = new FreeCamera('camera', new Vector3(0, 150, -300), scene);
+    camera.setTarget(new Vector3(0, 0, 0));
     camera.attachControl(this.engine.getRenderingCanvas(), true);
 
-    // Light
-    const light = new HemisphericLight('light', new Vector3(0, 1, 0), scene);
-    light.intensity = 0.7;
+    // Ambient light - soft overall illumination
+    const ambientLight = new HemisphericLight('ambientLight', new Vector3(0, 1, 0), scene);
+    ambientLight.intensity = 0.5;
+    ambientLight.diffuse = new Color3(0.9, 0.9, 1.0); // Slightly blue tint
+    ambientLight.groundColor = new Color3(0.3, 0.3, 0.3); // Darker ground reflection
 
-    // Ground (temporary placeholder)
-    const ground = MeshBuilder.CreateGround('ground', { width: 100, height: 100 }, scene);
+    // Directional light - main sun light
+    const sunLight = new DirectionalLight('sunLight', new Vector3(-1, -2, -1), scene);
+    sunLight.intensity = 0.8;
+    sunLight.diffuse = new Color3(1.0, 0.95, 0.8); // Warm sunlight
+    sunLight.specular = new Color3(1.0, 1.0, 0.9);
 
-    // Material for ground
-    const groundMat = new StandardMaterial('groundMat', scene);
-    groundMat.diffuseColor = new Color3(0.2, 0.6, 0.2); // Green
-    ground.material = groundMat;
+    // Island placeholder - circular terrain
+    const island = MeshBuilder.CreateDisc('island', {
+      radius: 1000,  // 2000m diameter arena (1000m radius)
+      tessellation: 64
+    }, scene);
+    island.rotation.x = Math.PI / 2; // Rotate to be horizontal
+    island.position.y = 0;
 
-    // Test sphere
-    const sphere = MeshBuilder.CreateSphere('sphere', { diameter: 2 }, scene);
-    sphere.position.y = 1;
-    const sphereMat = new StandardMaterial('sphereMat', scene);
-    sphereMat.diffuseColor = new Color3(1, 1, 1); // White
-    sphere.material = sphereMat;
+    // Island material - green/brown terrain
+    const islandMat = new StandardMaterial('islandMat', scene);
+    islandMat.diffuseColor = new Color3(0.25, 0.5, 0.2); // Terrain green
+    islandMat.specularColor = new Color3(0.1, 0.1, 0.1); // Low specularity for terrain
+    island.material = islandMat;
+
+    // Ocean plane - water around the island
+    const ocean = MeshBuilder.CreateGround('ocean', {
+      width: 4000,  // Larger than island
+      height: 4000
+    }, scene);
+    ocean.position.y = -5; // Slightly below island
+
+    // Ocean material - blue water
+    const oceanMat = new StandardMaterial('oceanMat', scene);
+    oceanMat.diffuseColor = new Color3(0.1, 0.3, 0.6); // Deep blue water
+    oceanMat.specularColor = new Color3(0.3, 0.3, 0.4); // Some water reflection
+    ocean.material = oceanMat;
 
     return scene;
   }
