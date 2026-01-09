@@ -552,7 +552,7 @@ export class DogfightRoom extends Room<RoomState> {
     const MIN_SPEED = 30;           // Minimum speed (m/s)
     const MAX_SPEED = 100;          // Maximum speed (m/s)
     const GRAVITY = -9.8;           // m/s² (downward)
-    const LIFT_COEFFICIENT = 0.15;  // Lift generated per m/s of forward speed
+    const LIFT_COEFFICIENT = 0.18;  // Lift generated per m/s of forward speed (balanced at ~54 m/s)
 
     this.state.players.forEach((player, sessionId) => {
       // Skip dead players
@@ -592,10 +592,11 @@ export class DogfightRoom extends Room<RoomState> {
       player.rotX = Math.max(-Math.PI / 3, Math.min(Math.PI / 3, player.rotX));
 
       // Forward thrust (always accelerating forward)
+      // In Babylon.js, -Z is forward (out of screen), so we negate Z
       const forward = {
         x: Math.sin(player.rotY),
         y: Math.sin(player.rotX),
-        z: Math.cos(player.rotY)
+        z: -Math.cos(player.rotY)  // Negative Z for forward direction
       };
 
       // Apply forward acceleration
@@ -731,12 +732,13 @@ export class DogfightRoom extends Room<RoomState> {
     projectile.ownerId = sessionId;
     projectile.ownerTeam = player.team;
 
-    // Spawn slightly in front of plane
-    const SPAWN_OFFSET = 15; // 15 meters in front
+    // Spawn slightly in front of plane (from the nose, not tail)
+    const SPAWN_OFFSET = 15; // 15 meters in front of nose
+    // In Babylon.js, -Z is forward, so we negate Z
     const forward = {
       x: Math.sin(player.rotY),
       y: Math.sin(player.rotX),
-      z: Math.cos(player.rotY)
+      z: -Math.cos(player.rotY)  // Negative Z for forward direction
     };
 
     projectile.posX = player.posX + forward.x * SPAWN_OFFSET;
