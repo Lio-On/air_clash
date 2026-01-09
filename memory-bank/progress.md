@@ -1426,3 +1426,313 @@ LOBBY → COUNTDOWN → IN_MATCH → RESULTS (future)
 
 ### Next Steps
 - Step 2.6: Match start transition and spawn assignment
+
+---
+
+## Step 2.6 - Match Start Transition and Spawn Assignment ✅ COMPLETED
+
+**Date**: January 9, 2026
+
+### What Was Implemented
+
+Implemented spawn position assignment and spawn protection system that activates when match starts.
+
+#### PlayerState Schema Updates
+
+Added position, rotation, velocity, and spawn protection fields:
+
+**Position fields (3D coordinates):**
+- `posX`, `posY`, `posZ`: number - Player position in world space
+
+**Rotation fields (Euler angles in radians):**
+- `rotX`, `rotY`, `rotZ`: number - Player rotation
+
+**Velocity fields:**
+- `velocityX`, `velocityY`, `velocityZ`: number - Player velocity vector
+
+**Spawn protection fields:**
+- `invulnerable`: boolean - Whether player is invulnerable
+- `spawnProtectionEnd`: number - Timestamp when protection ends
+
+All fields decorated with `@type('number')` or `@type('boolean')` for Colyseus synchronization.
+
+#### CONFIG Constants Added
+
+Added spawn-related constants to `common/src/index.ts`:
+
+```typescript
+ARENA_SIZE: 2000,  // meters (arena is 2000x2000)
+SPAWN_ALTITUDE: 100,  // meters above ground
+SPAWN_DISTANCE_FROM_CENTER: 800,  // meters from island center
+SPAWN_INITIAL_SPEED: 50,  // meters per second
+SPAWN_SPACING: 50,  // meters between planes on same team
+```
+
+#### Spawn Assignment Logic in `DogfightRoom.ts`
+
+**New Methods:**
+
+1. **`calculateSpawnPositions(team: Team)`**
+   - Calculates spawn positions for a specific team
+   - RED team spawns on left side (-X = -800)
+   - BLUE team spawns on right side (+X = +800)
+   - All planes at same altitude (Y = 100)
+   - Planes arranged in V-formation with 50m spacing in Z axis
+   - Returns array of position/rotation objects
+
+2. **`assignSpawnPositions()`**
+   - Called from `onCountdownComplete()` when match starts
+   - Gets spawn positions for both teams
+   - Assigns position, rotation to each player
+   - Sets initial velocity (forward at 50 m/s)
+   - Sets `alive = true` for all players
+   - Applies spawn protection (invulnerable = true)
+   - Sets protection end timestamp (current time + 2 seconds)
+   - Logs each player's spawn position
+   - Schedules spawn protection removal
+
+3. **`scheduleSpawnProtectionRemoval()`**
+   - Schedules timer to remove spawn protection
+   - Timer set for SPAWN_PROTECTION_DURATION (2000ms)
+   - Calls `removeSpawnProtection()` after delay
+
+4. **`removeSpawnProtection()`**
+   - Removes invulnerability from all players
+   - Checks `spawnProtectionEnd` timestamp
+   - Sets `invulnerable = false` for expired protection
+   - Logs count of players with protection removed
+
+**Spawn Position Calculation:**
+
+Teams spawn on opposite sides of island, facing each other:
+
+| Team | X Position | Y Position | Z Position | Facing Direction |
+|------|-----------|-----------|------------|-----------------|
+| RED | -800 | 100 | -100 to +100 | +X (right, toward BLUE) |
+| BLUE | +800 | 100 | -100 to +100 | -X (left, toward RED) |
+
+**V-Formation Spacing:**
+- 5 planes per team
+- Center plane at Z=0
+- Others spread at -100, -50, 0, +50, +100
+- 50m spacing between adjacent planes
+
+#### Test Client: `test-spawn.js`
+
+Created comprehensive test with three scenarios:
+
+**Test 1: Spawn positions and team placement**
+- Two humans join and ready up
+- Wait for countdown (5 seconds)
+- Verify phase transitions to IN_MATCH
+- Check RED team spawns at X=-800
+- Check BLUE team spawns at X=+800
+- Verify all at altitude Y=100
+- Verify Z spacing (50m intervals)
+- Verify RED team has +X velocity
+- Verify BLUE team has -X velocity
+- Verify all players marked as alive
+
+**Test 2: Spawn protection**
+- Check all players invulnerable immediately after spawn
+- Wait 2+ seconds for protection to expire
+- Verify all players become vulnerable
+- Confirms protection lasts exactly 2 seconds
+
+**Test 3: Spawn positions consistent across clients**
+- Two clients join same match
+- Compare spawn positions from both perspectives
+- Verify all positions match (< 0.1m difference)
+- Confirms state synchronization works correctly
+
+### Tests Passed ✅
+
+All three test scenarios passed successfully:
+
+**✅ Test 1: Spawn positions**
+```
+RED team positions:
+  Alice: pos=(-800, 100, -100), vel=(50.0, 0.0, 0.0), invulnerable=true
+  BOT-1: pos=(-800, 100, -50), vel=(50.0, 0.0, 0.0), invulnerable=true
+  BOT-2: pos=(-800, 100, 0), vel=(50.0, 0.0, 0.0), invulnerable=true
+  BOT-3: pos=(-800, 100, 50), vel=(50.0, 0.0, 0.0), invulnerable=true
+  BOT-4: pos=(-800, 100, 100), vel=(50.0, 0.0, 0.0), invulnerable=true
+
+BLUE team positions:
+  Bob: pos=(800, 100, -100), vel=(-50.0, 0.0, 0.0), invulnerable=true
+  BOT-5: pos=(800, 100, -50), vel=(-50.0, 0.0, 0.0), invulnerable=true
+  BOT-6: pos=(800, 100, 0), vel=(-50.0, 0.0, 0.0), invulnerable=true
+  BOT-7: pos=(800, 100, 50), vel=(-50.0, 0.0, 0.0), invulnerable=true
+  BOT-8: pos=(800, 100, 100), vel=(-50.0, 0.0, 0.0), invulnerable=true
+
+✅ Test 1 passed: Teams spawn on opposite sides facing each other
+```
+
+**✅ Test 2: Spawn protection**
+```
+Invulnerable players immediately after spawn: 10/10
+Waiting 2 seconds for spawn protection to expire...
+Vulnerable players after protection expires: 10/10
+✅ Test 2 passed: Spawn protection lasts exactly 2 seconds
+```
+
+**✅ Test 3: Position consistency**
+```
+✅ All positions match across clients
+✅ Test 3 passed: Positions consistent across all clients
+```
+
+**Server Logs:**
+```
+⏰ Countdown complete! Transitioning to match...
+🎮 Match started!
+📍 Room phase: IN_MATCH
+✈️  Assigning spawn positions...
+✈️  Alice (RED): pos=(-800, 100, -100), vel=(50, 0, 0), invulnerable=true
+✈️  Bob (BLUE): pos=(800, 100, -100), vel=(-50, 0, 0), invulnerable=true
+...
+🛡️  Spawn protection removed for 10 players
+```
+
+**Verification Results:**
+- ✅ RED team spawns on left side (X=-800)
+- ✅ BLUE team spawns on right side (X=+800)
+- ✅ All planes at correct altitude (Y=100)
+- ✅ Planes arranged with 50m Z spacing
+- ✅ RED team faces right (+X direction, rotY=0)
+- ✅ BLUE team faces left (-X direction, rotY=π)
+- ✅ All planes have correct initial velocity
+- ✅ All planes marked as alive on spawn
+- ✅ Spawn protection applied to all players
+- ✅ Spawn protection lasts exactly 2 seconds
+- ✅ Positions consistent across all clients
+
+### Spawn Formation Details
+
+**RED Team Formation (X=-800, facing +X):**
+```
+     Alice (-100 Z)
+         ↓
+      BOT-1 (-50 Z)
+         ↓
+      BOT-2 (0 Z) ← Center
+         ↓
+      BOT-3 (+50 Z)
+         ↓
+      BOT-4 (+100 Z)
+
+All flying toward → +X direction
+```
+
+**BLUE Team Formation (X=+800, facing -X):**
+```
+       Bob (-100 Z)
+          ↓
+      BOT-5 (-50 Z)
+          ↓
+      BOT-6 (0 Z) ← Center
+          ↓
+      BOT-7 (+50 Z)
+          ↓
+      BOT-8 (+100 Z)
+
+All flying toward ← -X direction
+```
+
+**Teams face each other across the island center (X=0):**
+```
+RED Team                 Island Center              BLUE Team
+(X=-800) ────────────→  (X=0)  ←──────────── (X=+800)
+   50 m/s                                        50 m/s
+```
+
+### Spawn Protection Mechanics
+
+**Duration:**
+- Exactly 2000ms (2 seconds)
+- Defined in CONFIG.SPAWN_PROTECTION_DURATION
+- Server-authoritative timer
+
+**Protection Application:**
+- Applied immediately when match starts
+- All players invulnerable simultaneously
+- `invulnerable` flag set to true
+- `spawnProtectionEnd` timestamp set
+
+**Protection Removal:**
+- Single timer for all players (not per-player timers)
+- Timer scheduled when spawn positions assigned
+- `removeSpawnProtection()` called after 2 seconds
+- Sets `invulnerable = false` for all players
+- State synchronized to all clients
+
+**Future Combat Integration:**
+- Weapon hit detection will check `invulnerable` flag
+- Hits ignored if target is invulnerable
+- Visual indicator (blinking) will be added in client (Step 5.x)
+- Protection prevents spawn camping
+
+### Position and Velocity Representation
+
+**Coordinate System:**
+- Origin (0, 0, 0) at island center
+- +X axis: East (BLUE team direction)
+- -X axis: West (RED team direction)
+- +Y axis: Up (altitude)
+- +Z axis: North
+- -Z axis: South
+
+**Units:**
+- Positions in meters
+- Velocities in meters per second
+- Rotations in radians
+
+**Velocity Calculation:**
+```typescript
+// RED team flies toward +X (positive velocity)
+const forward = player.team === Team.RED ? 1 : -1;
+player.velocityX = forward * CONFIG.SPAWN_INITIAL_SPEED; // +50 or -50
+player.velocityY = 0;  // No vertical movement on spawn
+player.velocityZ = 0;  // No lateral movement on spawn
+```
+
+### Developer Notes
+
+**Schema Field Synchronization:**
+- All position/rotation/velocity fields synchronized via Colyseus
+- Delta encoding keeps bandwidth low
+- Clients receive updates automatically
+- No manual sync calls needed
+
+**Spawn Timing:**
+- Spawn assignment happens in `onCountdownComplete()`
+- Happens immediately after phase transition to IN_MATCH
+- All players spawn simultaneously
+- No delay between players
+
+**Protection Timer:**
+- Single shared timer for all players (not individual timers)
+- More efficient than per-player timers
+- Simpler to manage and debug
+- All players protected for same duration
+
+**Future Flight Simulation:**
+- Step 6.x will add physics simulation
+- Positions will update based on velocity
+- Players will be able to control their planes
+- Current static positions are placeholders
+
+**Collision Detection (Future):**
+- Step 7.x will add collision detection
+- Will check `invulnerable` flag before damage
+- Spawn protection prevents early deaths
+- Capsule collision volumes around planes
+
+**Edge Cases Handled:**
+- Room disposal before protection expires: Timer fires but doesn't crash
+- All players disconnect: Protection removal still executes
+- Clients join mid-protection: They see current invulnerable state
+- State sync delay: Test waits extra buffer time
+
+### Next Steps
+- Step 3.1: Create Babylon scene + render loop

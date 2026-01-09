@@ -267,6 +267,117 @@ export class DogfightRoom extends Room<RoomState> {
   }
 
   /**
+   * Calculate spawn positions for a team
+   * Teams spawn on opposite sides of the island, facing toward center
+   */
+  private calculateSpawnPositions(team: Team): Array<{ posX: number; posY: number; posZ: number; rotY: number }> {
+    const positions: Array<{ posX: number; posY: number; posZ: number; rotY: number }> = [];
+
+    // RED team spawns on the left (-X), BLUE team spawns on the right (+X)
+    const xDirection = team === Team.RED ? -1 : 1;
+    const spawnX = xDirection * CONFIG.SPAWN_DISTANCE_FROM_CENTER;
+    const spawnY = CONFIG.SPAWN_ALTITUDE;
+
+    // Rotation: RED faces right (+X direction, 0 rad), BLUE faces left (-X direction, π rad)
+    const rotY = team === Team.RED ? 0 : Math.PI;
+
+    // Arrange planes in a V-formation (spread in Z axis)
+    // Center plane at Z=0, others spread with SPAWN_SPACING
+    const teamSize = CONFIG.MAX_PLAYERS_PER_TEAM;
+    const centerIndex = Math.floor(teamSize / 2);
+
+    for (let i = 0; i < teamSize; i++) {
+      const offsetZ = (i - centerIndex) * CONFIG.SPAWN_SPACING;
+      positions.push({
+        posX: spawnX,
+        posY: spawnY,
+        posZ: offsetZ,
+        rotY: rotY,
+      });
+    }
+
+    return positions;
+  }
+
+  /**
+   * Assign spawn positions to all players
+   */
+  private assignSpawnPositions(): void {
+    console.log('✈️  Assigning spawn positions...');
+
+    // Get spawn positions for each team
+    const redSpawns = this.calculateSpawnPositions(Team.RED);
+    const blueSpawns = this.calculateSpawnPositions(Team.BLUE);
+
+    let redIndex = 0;
+    let blueIndex = 0;
+
+    // Assign positions to players
+    this.state.players.forEach((player) => {
+      let spawn;
+      if (player.team === Team.RED) {
+        spawn = redSpawns[redIndex % redSpawns.length];
+        redIndex++;
+      } else {
+        spawn = blueSpawns[blueIndex % blueSpawns.length];
+        blueIndex++;
+      }
+
+      // Assign position and rotation
+      player.posX = spawn.posX;
+      player.posY = spawn.posY;
+      player.posZ = spawn.posZ;
+      player.rotY = spawn.rotY;
+
+      // Set initial velocity (forward at spawn speed)
+      const forward = player.team === Team.RED ? 1 : -1; // RED flies toward +X, BLUE toward -X
+      player.velocityX = forward * CONFIG.SPAWN_INITIAL_SPEED;
+      player.velocityY = 0;
+      player.velocityZ = 0;
+
+      // Set alive
+      player.alive = true;
+
+      // Apply spawn protection
+      player.invulnerable = true;
+      player.spawnProtectionEnd = Date.now() + CONFIG.SPAWN_PROTECTION_DURATION;
+
+      console.log(`✈️  ${player.name} (${player.team}): pos=(${player.posX}, ${player.posY}, ${player.posZ}), vel=(${player.velocityX}, ${player.velocityY}, ${player.velocityZ}), invulnerable=${player.invulnerable}`);
+    });
+
+    // Schedule spawn protection removal for all players
+    this.scheduleSpawnProtectionRemoval();
+  }
+
+  /**
+   * Schedule removal of spawn protection for all players
+   */
+  private scheduleSpawnProtectionRemoval(): void {
+    setTimeout(() => {
+      this.removeSpawnProtection();
+    }, CONFIG.SPAWN_PROTECTION_DURATION);
+  }
+
+  /**
+   * Remove spawn protection from all players
+   */
+  private removeSpawnProtection(): void {
+    const now = Date.now();
+    let count = 0;
+
+    this.state.players.forEach((player) => {
+      if (player.invulnerable && player.spawnProtectionEnd <= now) {
+        player.invulnerable = false;
+        count++;
+      }
+    });
+
+    if (count > 0) {
+      console.log(`🛡️  Spawn protection removed for ${count} players`);
+    }
+  }
+
+  /**
    * Called when countdown timer completes
    */
   private onCountdownComplete(): void {
@@ -288,7 +399,8 @@ export class DogfightRoom extends Room<RoomState> {
     // Clear countdown timer
     this.countdownTimer = undefined;
 
-    // TODO: Step 2.6 will handle spawn assignment
+    // Assign spawn positions to all players
+    this.assignSpawnPositions();
   }
 
   /**
