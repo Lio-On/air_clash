@@ -573,17 +573,16 @@ class Game {
       mesh.position = Vector3.Lerp(mesh.position, targetPos, 0.3);
 
       // Interpolate rotation (shortest path)
-      // We can just lerp Euler angles for MVP, but need to handle wrap-around for Y if needed
-      // For now, simple lerp is fine as planes don't spin wildly
+      // Add π/2 to rotY because mesh is built facing -Z but physics expects rotY=0 to mean +X
       mesh.rotation.x = Scalar.Lerp(mesh.rotation.x, targetRot.x, 0.3);
-      mesh.rotation.y = Scalar.Lerp(mesh.rotation.y, targetRot.y, 0.3);
+      mesh.rotation.y = Scalar.Lerp(mesh.rotation.y, targetRot.y + Math.PI / 2, 0.3);
       mesh.rotation.z = Scalar.Lerp(mesh.rotation.z, targetRot.z, 0.3);
       
       // If distance is too large (teleport/spawn), snap instantly
       if (Vector3.Distance(mesh.position, targetPos) > 100) {
         mesh.position = targetPos;
         mesh.rotation.x = targetRot.x;
-        mesh.rotation.y = targetRot.y;
+        mesh.rotation.y = targetRot.y + Math.PI / 2;  // Add π/2 offset for mesh orientation
         mesh.rotation.z = targetRot.z;
       }
 
