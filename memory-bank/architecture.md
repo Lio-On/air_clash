@@ -278,6 +278,157 @@ npm run build:all     # Builds all packages
 
 ---
 
+## Server Room Architecture
+
+### DogfightRoom
+
+**File:** `server/src/rooms/DogfightRoom.ts`
+
+The DogfightRoom class is the main multiplayer room for Air Clash matches. It extends Colyseus `Room` and manages the game session lifecycle.
+
+#### Lifecycle Methods
+
+**`onCreate(options)`**
+Called once when the room is instantiated (first client joining).
+
+```typescript
+onCreate(options: any) {
+  // Set max clients to 10 (5v5)
+  this.maxClients = CONFIG.MAX_PLAYERS_PER_TEAM * 2;
+
+  // Set room metadata
+  this.setMetadata({ roomName, maxPlayers, currentPlayers });
+}
+```
+
+**Purpose:**
+- Initialize room configuration
+- Set player capacity
+- Configure room metadata for matchmaking
+
+**`onJoin(client, options)`**
+Called each time a client joins the room.
+
+```typescript
+onJoin(client: Client, options: any) {
+  // Track player count
+  this.playerCount++;
+
+  // Log join event
+  // Update metadata
+}
+```
+
+**Purpose:**
+- Add client to room
+- Track player count
+- Log connection events
+- Update room metadata
+
+**`onLeave(client, consented)`**
+Called when a client disconnects or leaves.
+
+```typescript
+onLeave(client: Client, consented: boolean) {
+  // Decrease player count
+  this.playerCount--;
+
+  // Log leave event with reason
+  // Update metadata
+}
+```
+
+**Parameters:**
+- `client`: The leaving client
+- `consented`: `true` if client explicitly left, `false` if disconnected
+
+**Purpose:**
+- Handle player departures
+- Track player count
+- Log disconnect events
+- Update room metadata
+
+**`onDispose()`**
+Called when the room is being destroyed (no clients remaining).
+
+```typescript
+onDispose() {
+  // Log room disposal
+  // Clean up resources
+}
+```
+
+**Purpose:**
+- Cleanup before room destruction
+- Log final state
+- Free resources
+
+#### Room Registration
+
+**File:** `server/src/index.ts`
+
+```typescript
+import { DogfightRoom } from './rooms/DogfightRoom';
+
+gameServer.define(CONFIG.ROOM_NAME, DogfightRoom);
+// Registers "dogfight" as a room type using DogfightRoom class
+```
+
+**How Room Creation Works:**
+1. Client calls `client.joinOrCreate("dogfight")` from browser
+2. If no "dogfight" room exists → Create new DogfightRoom instance
+3. If "dogfight" room exists and not full → Join existing room
+4. Client receives room reference and session ID
+
+**Room Lifecycle:**
+```
+Client 1 joins → onCreate() → onJoin(client1)
+Client 2 joins → onJoin(client2)
+Client 1 leaves → onLeave(client1)
+Client 2 leaves → onLeave(client2) → onDispose()
+```
+
+#### Testing
+
+**Test Script:** `server/test-client.js`
+
+Simple Node.js script to verify room functionality:
+
+```javascript
+const client = new Client('ws://localhost:3000');
+const room = await client.joinOrCreate('dogfight');
+// Room joined!
+
+await room.leave();
+// Room left!
+```
+
+**Running Tests:**
+```bash
+# Terminal 1
+npm run dev:server
+
+# Terminal 2
+node server/test-client.js
+```
+
+**Expected Output:**
+- Server logs show room creation, joins, leaves, disposal
+- Test script confirms successful join/leave operations
+- Player count increments/decrements correctly
+
+#### Current Limitations
+
+- **No state schema yet**: Room doesn't synchronize any state to clients
+- **No game logic**: Room only handles connections, no gameplay
+- **Simple player tracking**: Uses internal counter, not synced state
+- **No bot support**: Bots will be added in Step 8.1
+- **No phases**: Lobby/countdown/match phases will be added in Step 2.2+
+
+These limitations are intentional for Step 2.1 (basic room setup). Future steps will add state synchronization, game logic, and match flow.
+
+---
+
 ## Future Architecture Notes
 
 As development progresses:

@@ -273,5 +273,170 @@ For production:
 - Verbose logging can be disabled in production
 - Health endpoint exposes environment for monitoring
 
+---
+
+## Step 2.1 - Create Base Colyseus Server ✅ COMPLETED
+
+**Date**: January 9, 2026
+
+### What Was Implemented
+
+Created the foundational Colyseus room system with DogfightRoom class and registered it with the server.
+
+#### 1. DogfightRoom Class
+
+**File Created:**
+- `server/src/rooms/DogfightRoom.ts`: Base Colyseus room implementation
+
+**Implemented Lifecycle Methods:**
+
+**`onCreate(options)`**
+- Called when room is created
+- Sets `maxClients` to 10 (5v5 from CONFIG.MAX_PLAYERS_PER_TEAM)
+- Sets room metadata (roomName, maxPlayers, currentPlayers)
+- Logs room creation with room ID
+
+**`onJoin(client, options)`**
+- Called when a client joins the room
+- Increments player count
+- Logs client session ID and current player count
+- Updates room metadata with current player count
+
+**`onLeave(client, consented)`**
+- Called when a client leaves the room
+- Decrements player count
+- Logs client session ID, consented flag, and current player count
+- Updates room metadata with current player count
+
+**`onDispose()`**
+- Called when room is disposed (no more clients)
+- Logs room disposal with room ID and final player count
+- Clean room cleanup
+
+**Features:**
+- Player count tracking (internal counter)
+- Room metadata for matchmaking/lobby systems
+- Detailed logging for all lifecycle events
+- Max client enforcement (10 players: 5v5)
+
+#### 2. Server Registration
+
+**File Modified:**
+- `server/src/index.ts`: Added DogfightRoom registration
+
+**Changes:**
+- Import DogfightRoom class
+- Register room with `gameServer.define(CONFIG.ROOM_NAME, DogfightRoom)`
+- Updated startup logs to show room registration
+
+**Room Registration:**
+```typescript
+gameServer.define(CONFIG.ROOM_NAME, DogfightRoom);
+// Registers "dogfight" room using DogfightRoom class
+```
+
+#### 3. Test Client
+
+**File Created:**
+- `server/test-client.js`: Node.js test script for room functionality
+
+**Test Script Features:**
+- Creates two Colyseus clients
+- Tests joining room (both clients)
+- Tests leaving room (both clients)
+- Verifies expected server logs
+- Uses colyseus.js client library (already available from workspace)
+
+**Test Workflow:**
+1. Client 1 joins → Player count: 1/10
+2. Client 2 joins → Player count: 2/10
+3. Client 1 leaves → Player count: 1/10
+4. Client 2 leaves → Player count: 0/10
+5. Room disposes (no clients remaining)
+
+### Tests Passed ✅
+
+All tests from Step 2.1 implementation plan passed:
+
+**✅ Test 1: Joining increases player count in server logs**
+
+Test output:
+```
+🧪 Starting DogfightRoom test...
+📥 Test 1: Client 1 joining room...
+✅ Client 1 joined room: 8H-Lk3gca
+   Session ID: TW8EjPnmA
+
+📥 Test 2: Client 2 joining room...
+✅ Client 2 joined room: 8H-Lk3gca
+   Session ID: xiXKG4ubs
+```
+
+Server logs:
+```
+🎮 DogfightRoom created: 8H-Lk3gca
+👤 Client TW8EjPnmA joined
+📊 Player count: 1/10
+👤 Client xiXKG4ubs joined
+📊 Player count: 2/10
+```
+
+**✅ Test 2: Leaving decreases player count cleanly without errors**
+
+Test output:
+```
+📤 Test 3: Client 1 leaving room...
+✅ Client 1 left room
+
+📤 Test 4: Client 2 leaving room...
+✅ Client 2 left room
+
+✅ All tests passed!
+```
+
+Server logs:
+```
+👋 Client TW8EjPnmA left (consented: true)
+📊 Player count: 1/10
+👋 Client xiXKG4ubs left (consented: true)
+📊 Player count: 0/10
+🗑️  DogfightRoom disposed: 8H-Lk3gca
+📊 Final player count: 0
+```
+
+**Additional Verification:**
+- ✅ Room metadata updates correctly with player count
+- ✅ Room disposes cleanly when all clients leave
+- ✅ No errors or crashes during join/leave cycles
+- ✅ Multiple clients can join the same room
+- ✅ Max clients set to 10 (5v5)
+
+### Developer Notes
+
+**Testing Workflow:**
+```bash
+# Terminal 1: Start server
+npm run dev:server
+
+# Terminal 2: Run test client
+node server/test-client.js
+```
+
+**Room Lifecycle:**
+1. First client calls `joinOrCreate("dogfight")` → Room created, client joins
+2. Subsequent clients call `joinOrCreate("dogfight")` → Join existing room
+3. When last client leaves → Room disposes automatically
+4. Next client creates a new room instance
+
+**Key Design Decisions:**
+- Simple player count tracking (will be replaced with state schema in Step 2.2)
+- Room metadata for future matchmaking features
+- Verbose logging for development/debugging
+- Max clients enforced at room level
+- Room auto-disposes when empty (Colyseus default behavior)
+
+**Note on State:**
+Currently, the room doesn't have a state schema yet. Player count is tracked internally but not synchronized to clients. Step 2.2 will add Colyseus state schema for proper client synchronization.
+
 ### Next Steps
-- Step 2.1: Create base Colyseus server with DogfightRoom
+- Step 2.2: Define minimal authoritative room state schema

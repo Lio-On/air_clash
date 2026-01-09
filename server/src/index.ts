@@ -4,6 +4,7 @@ import { createServer } from 'http';
 import express from 'express';
 import cors from 'cors';
 import { CONFIG, Environment } from '@air-clash/common';
+import { DogfightRoom } from './rooms/DogfightRoom';
 
 // Load environment configuration
 const NODE_ENV = (process.env.NODE_ENV || 'development') as Environment;
@@ -27,6 +28,9 @@ const gameServer = new Server({
   server: createServer(app),
 });
 
+// Register game rooms
+gameServer.define(CONFIG.ROOM_NAME, DogfightRoom);
+
 // Health check endpoint
 app.get('/health', (req, res) => {
   res.json({
@@ -42,7 +46,7 @@ gameServer.listen(PORT).then(() => {
   console.log('🚀 Air Clash Server is listening on port', PORT);
   console.log(`🌍 Environment: ${NODE_ENV}`);
   console.log(`🔗 CORS Origin: ${CORS_ORIGIN}`);
-  console.log(`🎮 Room Name: ${CONFIG.ROOM_NAME}`);
+  console.log(`🎮 Room "${CONFIG.ROOM_NAME}" registered (DogfightRoom)`);
 
   if (VERBOSE_LOGGING) {
     console.log(`📊 Server Tick Rate: ${CONFIG.SERVER_TICK_RATE} Hz`);
