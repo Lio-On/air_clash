@@ -76,12 +76,19 @@ class Game {
     }
 
     // Run render loop
+    let frameCount = 0;
     this.engine.runRenderLoop(() => {
       this.sendInput();            // Send keyboard input to server
       this.updatePlayerMeshes();   // Update player mesh positions from server
       this.updateProjectileMeshes(); // Update projectile mesh positions from server
       this.updateCamera();         // Update camera to follow local player
       this.scene.render();         // Render the scene
+
+      // Log every 60 frames (about once per second at 60fps)
+      frameCount++;
+      if (frameCount % 60 === 0 && this.room && this.room.state) {
+        console.log(`🎮 Render loop active. Players: ${this.room.state.players.size}, Meshes: ${this.playerMeshes.size}, SessionId: ${this.sessionId || 'none'}`);
+      }
     });
 
     // Handle window resize
@@ -446,6 +453,8 @@ class Game {
    * Create airplane placeholder mesh
    */
   private createAirplaneMesh(sessionId: string, team: Team): Mesh {
+    console.log(`🛠️  Creating airplane mesh for session ${sessionId}, team ${team}`);
+
     // Create parent mesh to hold all parts
     const airplane = new Mesh(`airplane-${sessionId}`, this.scene);
 
@@ -502,9 +511,10 @@ class Game {
     }
 
     const localPlayerMesh = this.playerMeshes.get(this.sessionId);
-    if (localPlayerMesh) {
+    if (localPlayerMesh && this.camera.lockedTarget !== localPlayerMesh) {
       // Set camera to follow local player's mesh
       this.camera.lockedTarget = localPlayerMesh;
+      console.log(`📷 Camera now following ${this.sessionId}`);
     }
   }
 
@@ -522,7 +532,7 @@ class Game {
       if (!mesh) {
         mesh = this.createAirplaneMesh(sessionId, player.team);
         this.playerMeshes.set(sessionId, mesh);
-        console.log(`✈️  Created mesh for ${player.name} (${player.team})`);
+        console.log(`✈️  Created mesh for ${player.name} (${player.team}) at session ${sessionId}`);
       }
 
       // Update position
