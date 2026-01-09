@@ -592,11 +592,11 @@ export class DogfightRoom extends Room<RoomState> {
       player.rotX = Math.max(-Math.PI / 3, Math.min(Math.PI / 3, player.rotX));
 
       // Forward thrust (always accelerating forward)
-      // In Babylon.js, -Z is forward (out of screen), so we negate Z
+      // rotY = 0 means facing +X, rotY = π means facing -X (see spawn positions)
       const forward = {
-        x: Math.sin(player.rotY),
-        y: Math.sin(player.rotX),
-        z: -Math.cos(player.rotY)  // Negative Z for forward direction
+        x: Math.cos(player.rotY),   // X component uses cosine
+        y: Math.sin(player.rotX),   // Y component for pitch
+        z: Math.sin(player.rotY)    // Z component uses sine
       };
 
       // Apply forward acceleration
@@ -734,11 +734,11 @@ export class DogfightRoom extends Room<RoomState> {
 
     // Spawn slightly in front of plane (from the nose, not tail)
     const SPAWN_OFFSET = 15; // 15 meters in front of nose
-    // In Babylon.js, -Z is forward, so we negate Z
+    // rotY = 0 means facing +X, rotY = π means facing -X (same as physics)
     const forward = {
-      x: Math.sin(player.rotY),
-      y: Math.sin(player.rotX),
-      z: -Math.cos(player.rotY)  // Negative Z for forward direction
+      x: Math.cos(player.rotY),   // X component uses cosine
+      y: Math.sin(player.rotX),   // Y component for pitch
+      z: Math.sin(player.rotY)    // Z component uses sine
     };
 
     projectile.posX = player.posX + forward.x * SPAWN_OFFSET;
