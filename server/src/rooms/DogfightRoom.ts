@@ -573,30 +573,32 @@ export class DogfightRoom extends Room<RoomState> {
       }
 
       // Pitch control (up/down)
+      // Inverted to match visual direction (up = nose up)
       if (input.up) {
-        player.rotX += PITCH_SPEED * deltaTime;
+        player.rotX -= PITCH_SPEED * deltaTime;
       }
       if (input.down) {
-        player.rotX -= PITCH_SPEED * deltaTime;
+        player.rotX += PITCH_SPEED * deltaTime;
       }
 
       // Yaw control (left/right)
+      // Inverted to match visual direction
       if (input.left) {
-        player.rotY -= YAW_SPEED * deltaTime;
+        player.rotY += YAW_SPEED * deltaTime;
       }
       if (input.right) {
-        player.rotY += YAW_SPEED * deltaTime;
+        player.rotY -= YAW_SPEED * deltaTime;
       }
 
       // Clamp pitch to prevent loop-de-loops
       player.rotX = Math.max(-Math.PI / 3, Math.min(Math.PI / 3, player.rotX));
 
       // Forward thrust (always accelerating forward)
-      // rotY = 0 means facing +X, rotY = π means facing -X (see spawn positions)
+      // Negate to match Babylon.js mesh orientation
       const forward = {
-        x: Math.cos(player.rotY),   // X component uses cosine
-        y: Math.sin(player.rotX),   // Y component for pitch
-        z: Math.sin(player.rotY)    // Z component uses sine
+        x: -Math.cos(player.rotY),   // Negate X
+        y: -Math.sin(player.rotX),   // Negate Y for pitch
+        z: -Math.sin(player.rotY)    // Negate Z
       };
 
       // Apply forward acceleration
@@ -734,11 +736,11 @@ export class DogfightRoom extends Room<RoomState> {
 
     // Spawn slightly in front of plane (from the nose, not tail)
     const SPAWN_OFFSET = 15; // 15 meters in front of nose
-    // rotY = 0 means facing +X, rotY = π means facing -X (same as physics)
+    // Must match physics forward vector (negated)
     const forward = {
-      x: Math.cos(player.rotY),   // X component uses cosine
-      y: Math.sin(player.rotX),   // Y component for pitch
-      z: Math.sin(player.rotY)    // Z component uses sine
+      x: -Math.cos(player.rotY),   // Negate X
+      y: -Math.sin(player.rotX),   // Negate Y
+      z: -Math.sin(player.rotY)    // Negate Z
     };
 
     projectile.posX = player.posX + forward.x * SPAWN_OFFSET;
