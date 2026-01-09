@@ -573,31 +573,32 @@ export class DogfightRoom extends Room<RoomState> {
       }
 
       // Pitch control (up/down)
+      // Negative rotX = nose up, positive rotX = nose down (standard 3D)
       if (input.up) {
-        player.rotX += PITCH_SPEED * deltaTime;
+        player.rotX -= PITCH_SPEED * deltaTime;  // Nose up
       }
       if (input.down) {
-        player.rotX -= PITCH_SPEED * deltaTime;
+        player.rotX += PITCH_SPEED * deltaTime;  // Nose down
       }
 
       // Yaw control (left/right)
-      // Standard trig: right turn = clockwise = decrease angle, left turn = counter-clockwise = increase angle
+      // Standard 3D: Left = negative rotation, Right = positive rotation
       if (input.left) {
-        player.rotY += YAW_SPEED * deltaTime;  // Counter-clockwise
+        player.rotY -= YAW_SPEED * deltaTime;  // Turn left
       }
       if (input.right) {
-        player.rotY -= YAW_SPEED * deltaTime;  // Clockwise
+        player.rotY += YAW_SPEED * deltaTime;  // Turn right
       }
 
       // Clamp pitch to prevent loop-de-loops
       player.rotX = Math.max(-Math.PI / 3, Math.min(Math.PI / 3, player.rotX));
 
-      // Forward thrust (always accelerating forward)
-      // rotY = 0 means facing +X, rotY = π/2 means facing +Z
+      // Forward thrust (Z-Forward coordinate system)
+      // Standard 3D Game Math: Yaw 0 = +Z forward
       const forward = {
-        x: Math.cos(player.rotY),    // X component
-        y: Math.sin(player.rotX),    // Y component for pitch
-        z: Math.sin(player.rotY)     // Z component
+        x: Math.sin(player.rotY) * Math.cos(player.rotX),  // X = Sin(Yaw) * Cos(Pitch)
+        y: Math.sin(player.rotX),                          // Y = Sin(Pitch)
+        z: Math.cos(player.rotY) * Math.cos(player.rotX)   // Z = Cos(Yaw) * Cos(Pitch)
       };
 
       // Apply forward acceleration
@@ -735,11 +736,11 @@ export class DogfightRoom extends Room<RoomState> {
 
     // Spawn slightly in front of plane (from the nose, not tail)
     const SPAWN_OFFSET = 15; // 15 meters in front of nose
-    // Must match physics forward vector
+    // Must match physics forward vector (Z-Forward coordinate system)
     const forward = {
-      x: Math.cos(player.rotY),    // X component
-      y: Math.sin(player.rotX),    // Y component
-      z: Math.sin(player.rotY)     // Z component
+      x: Math.sin(player.rotY) * Math.cos(player.rotX),  // X = Sin(Yaw) * Cos(Pitch)
+      y: Math.sin(player.rotX),                          // Y = Sin(Pitch)
+      z: Math.cos(player.rotY) * Math.cos(player.rotX)   // Z = Cos(Yaw) * Cos(Pitch)
     };
 
     projectile.posX = player.posX + forward.x * SPAWN_OFFSET;
