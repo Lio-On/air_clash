@@ -17,6 +17,7 @@ class Game {
   private countdownInterval: any = null;
   private playerMeshes: Map<string, Mesh> = new Map();
   private projectileMeshes: Map<string, Mesh> = new Map();
+  private lastMeshUpdateLog: number = 0;
 
   // Input state
   private inputState = {
@@ -76,6 +77,7 @@ class Game {
     }
 
     // Run render loop
+    console.log('🚀 Starting render loop...');
     let frameCount = 0;
     this.engine.runRenderLoop(() => {
       this.sendInput();            // Send keyboard input to server
@@ -86,6 +88,9 @@ class Game {
 
       // Log every 60 frames (about once per second at 60fps)
       frameCount++;
+      if (frameCount === 60) {
+        console.log('✅ Render loop confirmed running (60 frames rendered)');
+      }
       if (frameCount % 60 === 0 && this.room && this.room.state) {
         console.log(`🎮 Render loop active. Players: ${this.room.state.players.size}, Meshes: ${this.playerMeshes.size}, SessionId: ${this.sessionId || 'none'}`);
       }
@@ -272,9 +277,11 @@ class Game {
   private setupRoomListeners(): void {
     if (!this.room) return;
 
+    console.log(`🔧 Setting up room listeners. SessionId: ${this.sessionId}`);
+
     // Listen to state changes
     this.room.onStateChange((state) => {
-      console.log('Room state updated:', state.phase);
+      console.log(`📡 Room state updated: phase=${state.phase}, players=${state.players.size}`);
       this.handleStateChange(state);
     });
 
@@ -367,7 +374,12 @@ class Game {
    * Handle match phase
    */
   private handleMatchPhase(state: any): void {
-    console.log('Match started!');
+    console.log(`🎮 Match started! Players in state: ${state.players.size}, SessionId: ${this.sessionId}`);
+
+    // Log all players
+    state.players.forEach((player: any, sessionId: string) => {
+      console.log(`  Player ${sessionId}: ${player.name} (${player.team}) at (${player.posX}, ${player.posY}, ${player.posZ})`);
+    });
 
     // Make sure we're showing the match HUD
     this.ui.showScreen('match');
@@ -522,7 +534,16 @@ class Game {
    * Update all player mesh positions from server state
    */
   private updatePlayerMeshes(): void {
-    if (!this.room || !this.room.state) return;
+    if (!this.room || !this.room.state) {
+      return;
+    }
+
+    // Debug log every 60 frames (about once per second)
+    const now = Date.now();
+    if (!this.lastMeshUpdateLog || now - this.lastMeshUpdateLog > 1000) {
+      console.log(`🔄 updatePlayerMeshes: room=${!!this.room}, state=${!!this.room?.state}, players=${this.room?.state?.players?.size || 0}, meshes=${this.playerMeshes.size}, sessionId=${this.sessionId}`);
+      this.lastMeshUpdateLog = now;
+    }
 
     // Update existing meshes and create new ones
     this.room.state.players.forEach((player: any, sessionId: string) => {
