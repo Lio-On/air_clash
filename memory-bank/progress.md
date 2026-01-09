@@ -2820,3 +2820,134 @@ Side View:
 
 ### Next Steps
 - Step 4.2: Follow camera (third-person view)
+
+---
+
+## Step 4.2 - Follow Camera (Third-Person View) ✅ COMPLETED
+
+**Date**: January 9, 2026
+
+### What Was Implemented
+
+Implemented a third-person follow camera that tracks the local player's airplane from behind and above, providing a smooth cinematic view.
+
+#### Camera System
+
+**Camera Type:**
+- Replaced `FreeCamera` with `FollowCamera`
+- Babylon.js FollowCamera provides built-in smooth following behavior
+- Automatically tracks target mesh position and rotation
+
+**Camera Configuration:**
+```typescript
+this.camera = new FollowCamera('followCamera', new Vector3(0, 150, -300), scene);
+this.camera.radius = 30;              // 30 meters behind target
+this.camera.heightOffset = 10;        // 10 meters above target
+this.camera.rotationOffset = 180;     // Look forward from behind
+this.camera.cameraAcceleration = 0.05; // Smooth acceleration
+this.camera.maxCameraSpeed = 20;      // Max follow speed (m/s)
+```
+
+**Camera Parameters:**
+
+1. **radius (30m)** - Distance behind plane, provides good view of surroundings
+2. **heightOffset (10m)** - Vertical offset above plane, slightly elevated angle
+3. **rotationOffset (180°)** - Camera behind plane looking forward
+4. **cameraAcceleration (0.05)** - Smooth, cinematic following
+5. **maxCameraSpeed (20 m/s)** - Prevents camera lag behind fast movement
+
+#### Client Changes (`client/src/main.ts`)
+
+**New Class Property:**
+```typescript
+private camera: FollowCamera;
+```
+
+**New Method: `updateCamera()`**
+```typescript
+private updateCamera(): void {
+  if (!this.sessionId || !this.playerMeshes.has(this.sessionId)) {
+    return;
+  }
+  const localPlayerMesh = this.playerMeshes.get(this.sessionId);
+  if (localPlayerMesh) {
+    this.camera.lockedTarget = localPlayerMesh;
+  }
+}
+```
+
+**Render Loop Integration:**
+```typescript
+this.engine.runRenderLoop(() => {
+  this.updatePlayerMeshes();
+  this.updateCamera();      // ← New: Update camera target
+  this.scene.render();
+});
+```
+
+### Camera Behavior
+
+**Third-Person View:**
+```
+         Camera Position
+              👁️
+               ↓ (30m behind, 10m up)
+          [Your Plane]
+               ↓
+       [Other planes ahead]
+```
+
+**View Characteristics:**
+- Over-the-shoulder perspective
+- Player plane visible in foreground
+- Smooth camera transitions with built-in acceleration
+- Cinematic feel with natural lag
+
+### Testing
+
+**Manual Browser Test:**
+1. Open http://localhost:5173
+2. Join game, select team, ready up
+3. Match starts with camera behind your plane
+
+**Expected Results:**
+- ✅ Camera positioned 30m behind, 10m above your plane
+- ✅ Camera looking forward (same direction as plane)
+- ✅ Your plane visible in foreground
+- ✅ Other 9 planes visible in scene
+- ✅ Smooth camera behavior
+
+**Current Behavior:**
+- Planes stationary at spawn positions (no physics yet)
+- Camera follows stationary plane position
+- When flight physics added (later step), camera will track movement
+
+### Developer Notes
+
+**Camera Target Management:**
+- Uses `lockedTarget` property for automatic tracking
+- Babylon.js handles all position/rotation interpolation
+- No manual matrix calculations needed
+
+**Local Player Identification:**
+- Uses `sessionId` to identify local player
+- Looks up mesh in `playerMeshes` Map
+- Only local player tracked by camera
+
+**Performance:**
+- Lightweight operation (single target tracking)
+- No significant FPS impact
+- GPU-optimized interpolation
+
+**Edge Cases:**
+- No sessionId → camera stays at default position
+- No local player mesh → camera uses initial position
+
+**Future Enhancements (Not MVP):**
+- Collision detection (no terrain clipping)
+- Dynamic height based on speed
+- Shake effects on damage
+- Free-look mode
+
+### Next Steps
+- Step 5.1: Basic flight controls (keyboard input)

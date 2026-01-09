@@ -1,4 +1,4 @@
-import { Engine, Scene, HemisphericLight, DirectionalLight, Vector3, MeshBuilder, FreeCamera, StandardMaterial, Color3, Color4, Mesh } from '@babylonjs/core';
+import { Engine, Scene, HemisphericLight, DirectionalLight, Vector3, MeshBuilder, FreeCamera, FollowCamera, StandardMaterial, Color3, Color4, Mesh } from '@babylonjs/core';
 import { CONFIG, Team, GamePhase } from '@air-clash/common';
 import { clientConfig } from './config';
 import { UIManager } from './UIManager';
@@ -7,6 +7,7 @@ import { Client, Room } from 'colyseus.js';
 class Game {
   private engine: Engine;
   private scene: Scene;
+  private camera: FollowCamera;
   private ui: UIManager;
   private client: Client;
   private room: Room | null = null;
@@ -65,6 +66,7 @@ class Game {
     // Run render loop
     this.engine.runRenderLoop(() => {
       this.updatePlayerMeshes();
+      this.updateCamera();
       this.scene.render();
     });
 
@@ -407,6 +409,21 @@ class Game {
   }
 
   /**
+   * Update camera to follow local player
+   */
+  private updateCamera(): void {
+    if (!this.sessionId || !this.playerMeshes.has(this.sessionId)) {
+      return;
+    }
+
+    const localPlayerMesh = this.playerMeshes.get(this.sessionId);
+    if (localPlayerMesh) {
+      // Set camera to follow local player's mesh
+      this.camera.lockedTarget = localPlayerMesh;
+    }
+  }
+
+  /**
    * Update all player mesh positions from server state
    */
   private updatePlayerMeshes(): void {
@@ -464,10 +481,14 @@ class Game {
     // Sky background - light blue sky
     scene.clearColor = new Color4(0.53, 0.81, 0.98, 1.0);
 
-    // Camera - positioned above and behind to see the island
-    const camera = new FreeCamera('camera', new Vector3(0, 150, -300), scene);
-    camera.setTarget(new Vector3(0, 0, 0));
-    camera.attachControl(this.engine.getRenderingCanvas(), true);
+    // Camera - follow camera for third-person view
+    this.camera = new FollowCamera('followCamera', new Vector3(0, 150, -300), scene);
+    this.camera.radius = 30;           // Distance from target (30 meters behind)
+    this.camera.heightOffset = 10;     // Height above target (10 meters up)
+    this.camera.rotationOffset = 180;  // Look forward from behind (180 degrees)
+    this.camera.cameraAcceleration = 0.05;  // How fast camera moves to target
+    this.camera.maxCameraSpeed = 20;   // Maximum camera movement speed
+    this.camera.attachControl(this.engine.getRenderingCanvas(), true);
 
     // Ambient light - soft overall illumination
     const ambientLight = new HemisphericLight('ambientLight', new Vector3(0, 1, 0), scene);
