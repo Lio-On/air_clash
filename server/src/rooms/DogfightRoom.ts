@@ -112,6 +112,9 @@ export class DogfightRoom extends Room<RoomState> {
       // Toggle ready state
       player.ready = !player.ready;
       console.log(`${player.ready ? '✅' : '⬜'} Player ${client.sessionId} (${player.name}) is ${player.ready ? 'READY' : 'NOT READY'}`);
+
+      // Check if all humans are ready and fill bots if needed
+      this.checkAndFillBots();
     });
   }
 
@@ -128,6 +131,105 @@ export class DogfightRoom extends Room<RoomState> {
       }
     });
     return count;
+  }
+
+  /**
+   * Check if all human players are ready
+   */
+  private areAllHumansReady(): boolean {
+    let humanCount = 0;
+    let readyCount = 0;
+
+    this.state.players.forEach((player) => {
+      if (!player.isBot) {
+        humanCount++;
+        if (player.ready) {
+          readyCount++;
+        }
+      }
+    });
+
+    // Need at least 1 human and all humans must be ready
+    return humanCount > 0 && humanCount === readyCount;
+  }
+
+  /**
+   * Check if bots have already been filled
+   */
+  private areBotsAlreadyFilled(): boolean {
+    let botCount = 0;
+    this.state.players.forEach((player) => {
+      if (player.isBot) {
+        botCount++;
+      }
+    });
+    return botCount > 0;
+  }
+
+  /**
+   * Check if ready to fill bots and fill if conditions are met
+   */
+  private checkAndFillBots(): void {
+    // Only fill bots in LOBBY phase
+    if (this.state.phase !== GamePhase.LOBBY) {
+      return;
+    }
+
+    // Only fill bots once
+    if (this.areBotsAlreadyFilled()) {
+      return;
+    }
+
+    // Check if all humans are ready
+    if (this.areAllHumansReady()) {
+      this.fillBots();
+    }
+  }
+
+  /**
+   * Fill remaining slots with bots to reach 5v5
+   */
+  private fillBots(): void {
+    console.log('🤖 All humans ready! Filling bots to 5v5...');
+
+    const redHumans = this.getTeamCount(Team.RED, false);
+    const blueHumans = this.getTeamCount(Team.BLUE, false);
+
+    console.log(`   Current: Red ${redHumans} humans, Blue ${blueHumans} humans`);
+
+    // Calculate bots needed for each team
+    const redBotsNeeded = CONFIG.MAX_PLAYERS_PER_TEAM - redHumans;
+    const blueBotsNeeded = CONFIG.MAX_PLAYERS_PER_TEAM - blueHumans;
+
+    let botCounter = 1;
+
+    // Add RED bots
+    for (let i = 0; i < redBotsNeeded; i++) {
+      const botId = `bot-${Date.now()}-${botCounter}`;
+      const botName = `BOT-${botCounter}`;
+      const bot = new PlayerState(botId, botName, Team.RED, true);
+      bot.ready = true; // Bots are always ready
+      this.state.players.set(botId, bot);
+      console.log(`🤖 Added ${botName} to RED team`);
+      botCounter++;
+    }
+
+    // Add BLUE bots
+    for (let i = 0; i < blueBotsNeeded; i++) {
+      const botId = `bot-${Date.now()}-${botCounter}`;
+      const botName = `BOT-${botCounter}`;
+      const bot = new PlayerState(botId, botName, Team.BLUE, true);
+      bot.ready = true; // Bots are always ready
+      this.state.players.set(botId, bot);
+      console.log(`🤖 Added ${botName} to BLUE team`);
+      botCounter++;
+    }
+
+    const finalRed = this.getTeamCount(Team.RED, true);
+    const finalBlue = this.getTeamCount(Team.BLUE, true);
+
+    console.log(`✅ Bots filled! Final teams: Red ${finalRed}, Blue ${finalBlue}`);
+    console.log(`📊 Total players: ${this.state.players.size}/10`);
   }
 
   /**

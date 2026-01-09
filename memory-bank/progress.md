@@ -946,3 +946,205 @@ All tests from Step 2.3 implementation plan passed:
 
 ### Next Steps
 - Step 2.4: Fill remaining slots with bots when all humans ready
+
+---
+
+## Step 2.4 - Fill Remaining Slots with Bots ✅ COMPLETED
+
+**Date**: January 9, 2026
+
+### What Was Implemented
+
+Implemented automatic bot filling to reach 5v5when all human players are ready.
+
+#### Bot Filling Logic in `DogfightRoom.ts`
+
+**New Methods:**
+
+1. **`areAllHumansReady(): boolean`**
+   - Counts total humans and ready humans
+   - Returns true if at least 1 human exists and all are ready
+   - Filters out bots from the count
+
+2. **`areBotsAlreadyFilled(): boolean`**
+   - Prevents duplicate bot filling
+   - Returns true if any bots exist in the room
+   - Ensures fillBots() only runs once per lobby
+
+3. **`checkAndFillBots(): void`**
+   - Called from toggleReady message handler
+   - Checks phase is LOBBY
+   - Checks bots not already filled
+   - Checks all humans are ready
+   - Triggers fillBots() if conditions met
+
+4. **`fillBots(): void`**
+   - Calculates bots needed per team: `5 - humanCount`
+   - Creates bot PlayerState instances with:
+     - Unique IDs: `bot-${Date.now()}-${counter}`
+     - Sequential names: BOT-1, BOT-2, BOT-3, etc.
+     - Team assignment: RED or BLUE
+     - `isBot: true` flag
+     - `ready: true` (bots always ready)
+   - Adds bots to RED team first, then BLUE team
+   - Logs bot creation and final team counts
+
+**Integration:**
+- toggleReady handler calls `checkAndFillBots()` after toggling state
+- Bot filling is server-authoritative and automatic
+- No client action required beyond readying up
+
+#### Test Client: `test-bot-filling.js`
+
+Created comprehensive test with two scenarios:
+
+**Test 1: Balanced teams (1 RED, 1 BLUE)**
+- Two humans join (Alice RED, Bob BLUE)
+- Both ready up
+- Expected: 8 bots added (4 to each team)
+- Expected: Final 5v5 (10 total players)
+
+**Test 2: Uneven teams (2 RED, 1 BLUE)**
+- Three humans join
+- Manually adjust to 2 RED, 1 BLUE
+- All ready up
+- Expected: 7 bots added (3 RED, 4 BLUE)
+- Expected: Final 5v5 (10 total players)
+
+### Tests Passed ✅
+
+Both test scenarios passed successfully:
+
+**✅ Test 1: Two humans (balanced)**
+```
+📥 Test 1: Two humans on balanced teams (1 RED, 1 BLUE)
+  Alice: RED, Bob: BLUE
+  Both players readying up...
+  Total players after ready: 10
+  Bots added: 8
+  Final teams: Red 5, Blue 5
+✅ Test 1 passed: 2 humans → 10 total (5v5)
+```
+
+**✅ Test 2: Three humans (uneven)**
+```
+📥 Test 2: Three humans on uneven teams
+  Charlie: RED, Diana: BLUE, Eve: RED
+  Adjusted: Charlie: RED, Diana: BLUE, Eve: RED
+  Current humans: Red 2, Blue 1
+  All players readying up...
+  Total players after ready: 10
+  Bots added: 7
+  Final teams: Red 5, Blue 5
+✅ Test 2 passed: 3 humans (2 RED, 1 BLUE) → 10 total (5v5)
+```
+
+**Server Logs:**
+
+Test 1 bot creation:
+```
+🤖 All humans ready! Filling bots to 5v5...
+   Current: Red 1 humans, Blue 1 humans
+🤖 Added BOT-1 to RED team
+🤖 Added BOT-2 to RED team
+🤖 Added BOT-3 to RED team
+🤖 Added BOT-4 to RED team
+🤖 Added BOT-5 to BLUE team
+🤖 Added BOT-6 to BLUE team
+🤖 Added BOT-7 to BLUE team
+🤖 Added BOT-8 to BLUE team
+✅ Bots filled! Final teams: Red 5, Blue 5
+📊 Total players: 10/10
+```
+
+Test 2 bot creation:
+```
+🤖 All humans ready! Filling bots to 5v5...
+   Current: Red 2 humans, Blue 1 humans
+🤖 Added BOT-1 to RED team
+🤖 Added BOT-2 to RED team
+🤖 Added BOT-3 to RED team
+🤖 Added BOT-4 to BLUE team
+🤖 Added BOT-5 to BLUE team
+🤖 Added BOT-6 to BLUE team
+🤖 Added BOT-7 to BLUE team
+✅ Bots filled! Final teams: Red 5, Blue 5
+📊 Total players: 10/10
+```
+
+**Verification Results:**
+- ✅ Bot filling triggers when all humans ready
+- ✅ Bots only filled once per lobby (prevents duplicates)
+- ✅ Correct number of bots added (10 - humanCount)
+- ✅ Bots distributed to correct teams
+- ✅ Final teams always balanced 5v5
+- ✅ Bot names are unique (BOT-1, BOT-2, etc.)
+- ✅ Bots marked with isBot: true flag
+- ✅ Bots marked as ready: true
+- ✅ Works with balanced teams (1v1)
+- ✅ Works with uneven teams (2v1)
+
+### Bot Filling Algorithm
+
+**Calculation:**
+```typescript
+const redBotsNeeded = CONFIG.MAX_PLAYERS_PER_TEAM - redHumans;
+const blueBotsNeeded = CONFIG.MAX_PLAYERS_PER_TEAM - blueHumans;
+```
+
+**Example Scenarios:**
+
+| Humans (R/B) | Bots Needed (R/B) | Final (R/B) |
+|--------------|-------------------|-------------|
+| 1 / 1        | 4 / 4             | 5 / 5       |
+| 2 / 1        | 3 / 4             | 5 / 5       |
+| 3 / 2        | 2 / 3             | 5 / 5       |
+| 5 / 0        | 0 / 5             | 5 / 5       |
+| 0 / 5        | 5 / 0             | 5 / 5       |
+
+**Bot Naming:**
+- Global counter increments for each bot
+- BOT-1, BOT-2, ..., BOT-8 (for 2 humans)
+- Ensures unique names across teams
+- Easy to identify bots in logs and UI
+
+### Developer Notes
+
+**Bot Filling Trigger:**
+- Only triggers in LOBBY phase
+- Only triggers once (checks if bots exist)
+- Requires at least 1 human
+- All humans must be ready
+- Called automatically from toggleReady handler
+
+**Bot Properties:**
+- `isBot: true` flag distinguishes from humans
+- `ready: true` always (bots don't need to ready)
+- Unique IDs prevent collisions: `bot-${timestamp}-${counter}`
+- Team assigned based on need (fills to 5 per team)
+
+**Room Disposal:**
+- Bots remain in player count when humans leave
+- Room disposes when all clients disconnect
+- Bots are Schema objects, not actual clients
+- Bots don't prevent room disposal
+
+**Future Bot Behavior (Step 8.x):**
+- Bots will have AI flight logic
+- Bots will shoot at enemies
+- Bots will respawn like humans
+- Bot difficulty is fixed (no scaling)
+
+**Team Balancing with Bots:**
+- Humans can have uneven teams
+- Bots fill to exactly 5v5
+- If 5 humans on RED, 0 on BLUE → 0 RED bots, 5 BLUE bots
+- Always results in fair 5v5 match
+
+**Edge Cases Handled:**
+- Empty room (no humans) → No bot filling
+- One human ready, one not → No bot filling (waits for all)
+- Humans change teams after bots filled → Bots remain (Step 2.5 will prevent team changes during countdown)
+
+### Next Steps
+- Step 2.5: Countdown state machine (5 seconds)
