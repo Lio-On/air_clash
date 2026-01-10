@@ -685,6 +685,8 @@ export class DogfightRoom extends Room<RoomState> {
     // Physics constants (m/s and m/s²)
     const PITCH_SPEED = 1.0;        // Radians per second (pitch up/down) - reduced for smoother control
     const YAW_SPEED = 0.7;          // Radians per second (turn left/right) - reduced for smoother control
+    const ROLL_SPEED = 2.0;         // Radians per second (banking speed)
+    const MAX_ROLL = Math.PI / 3;   // 60° maximum bank angle
     const FORWARD_ACCELERATION = 20; // m/s² (throttle)
     const AIR_RESISTANCE = 0.5;     // Drag coefficient
     const MIN_SPEED = 30;           // Minimum speed (m/s)
@@ -732,6 +734,17 @@ export class DogfightRoom extends Room<RoomState> {
       if (input.right) {
         player.rotY += YAW_SPEED * deltaTime;  // Turn right
       }
+
+      // Roll (Banking) - planes bank into turns like real aircraft
+      let targetRoll = 0;
+      if (input.left) {
+        targetRoll = -MAX_ROLL;  // Bank left (negative roll)
+      } else if (input.right) {
+        targetRoll = MAX_ROLL;   // Bank right (positive roll)
+      }
+      // Smoothly interpolate to target roll (auto-levels when no input)
+      const rollDiff = targetRoll - player.rotZ;
+      player.rotZ += rollDiff * ROLL_SPEED * deltaTime;
 
       // Clamp pitch to prevent loop-de-loops
       player.rotX = Math.max(-Math.PI / 3, Math.min(Math.PI / 3, player.rotX));
@@ -803,14 +816,32 @@ export class DogfightRoom extends Room<RoomState> {
         player.velocityY = Math.max(0, player.velocityY); // Stop downward velocity
       }
 
-      // Arena boundaries (2000m x 2000m, wraps around)
-      const arenaRadius = CONFIG.ARENA_SIZE / 2;
-      if (Math.abs(player.posX) > arenaRadius || Math.abs(player.posZ) > arenaRadius) {
-        // Wrap to other side
-        if (player.posX > arenaRadius) player.posX = -arenaRadius;
-        if (player.posX < -arenaRadius) player.posX = arenaRadius;
-        if (player.posZ > arenaRadius) player.posZ = -arenaRadius;
-        if (player.posZ < -arenaRadius) player.posZ = arenaRadius;
+      // Soft Boundaries - Force turn back toward center instead of wrapping
+      const distanceFromCenter = Math.sqrt(player.posX ** 2 + player.posZ ** 2);
+      const SOFT_BOUNDARY = 1200;  // Start forcing turn back
+      const HARD_BOUNDARY = 1500;  // Maximum distance (physical clamp)
+
+      if (distanceFromCenter > SOFT_BOUNDARY) {
+        // Calculate angle toward center (add 180° to match inverted physics forward vector)
+        const angleToCenter = Math.atan2(-player.posX, -player.posZ) + Math.PI;
+
+        // Calculate how far beyond boundary (0 = at soft boundary, 1 = at hard boundary)
+        const boundaryPressure = Math.min(1, (distanceFromCenter - SOFT_BOUNDARY) / (HARD_BOUNDARY - SOFT_BOUNDARY));
+
+        // Smoothly rotate toward center (stronger as they get closer to hard boundary)
+        const turnRate = YAW_SPEED * 2.0 * boundaryPressure * deltaTime; // Up to 2x normal turn speed
+        const currentAngle = player.rotY;
+        const angleDiff = this.normalizeAngle(angleToCenter - currentAngle);
+
+        // Apply forced turn toward center
+        player.rotY += Math.sign(angleDiff) * Math.min(Math.abs(angleDiff), turnRate);
+
+        // Hard clamp at maximum distance (prevent going beyond hard boundary)
+        if (distanceFromCenter > HARD_BOUNDARY) {
+          const clampFactor = HARD_BOUNDARY / distanceFromCenter;
+          player.posX *= clampFactor;
+          player.posZ *= clampFactor;
+        }
       }
     });
 

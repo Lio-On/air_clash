@@ -745,6 +745,23 @@ class Game {
     oceanMat.specularColor = new Color3(0.3, 0.3, 0.4); // Some water reflection
     ocean.material = oceanMat;
 
+    // Cloud Boundary - visual indicator of soft boundary at 1200m
+    const cloudBoundary = MeshBuilder.CreateTorus('cloudBoundary', {
+      diameter: 2400,    // 1200m radius × 2
+      thickness: 100,    // 100m thick wall of clouds
+      tessellation: 64   // Smooth circle
+    }, scene);
+    cloudBoundary.rotation.x = Math.PI / 2; // Rotate to be vertical (wall)
+    cloudBoundary.position.y = 100;         // Centered at flight altitude
+
+    // Cloud material - transparent white mist
+    const cloudMat = new StandardMaterial('cloudMat', scene);
+    cloudMat.diffuseColor = new Color3(1.0, 1.0, 1.0); // Pure white
+    cloudMat.emissiveColor = new Color3(0.8, 0.8, 0.9); // Slight glow
+    cloudMat.alpha = 0.3;  // 30% opacity (transparent)
+    cloudMat.backFaceCulling = false; // Visible from both sides
+    cloudBoundary.material = cloudMat;
+
     return scene;
   }
 }
