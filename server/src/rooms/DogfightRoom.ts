@@ -878,16 +878,18 @@ export class DogfightRoom extends Room<RoomState> {
     // Only update during match
     if (this.state.phase !== GamePhase.IN_MATCH) return;
 
-    // Physics constants (m/s and m/s²) - BANK-TO-TURN MODEL
-    const PITCH_SPEED = 1.0;        // Radians per second (pitch up/down)
-    const YAW_SPEED = 0.3;          // Radians per second (weak rudder)
-    const ROLL_SPEED = 2.0;         // Radians per second (banking speed)
-    const MAX_ROLL = Math.PI / 3;   // 60° maximum bank angle
-    const RATE_OF_TURN = 1.5;       // How fast banking turns the plane (induced yaw from roll)
-    const FORWARD_ACCELERATION = 20; // m/s² (throttle)
-    const MIN_SPEED = 30;           // Minimum speed (m/s)
-    const MAX_SPEED = 100;          // Maximum speed (m/s)
-    const GRAVITY = -9.8;           // m/s² (downward)
+    // Physics constants - FORCE BASED MODEL
+    const PITCH_SPEED = 1.0;
+    const YAW_SPEED = 0.3;
+    const ROLL_SPEED = 2.0;
+    const MAX_ROLL = Math.PI / 3;
+    const RATE_OF_TURN = 1.5;
+
+    // Speed & Force Tuning (30% Boost)
+    const FORWARD_ACCELERATION = 20; // Increased from 15
+    const MIN_SPEED = 25;            // Stall speed
+    const MAX_SPEED = 90;            // Increased from 70
+    const GRAVITY = -9.8;
 
     this.state.players.forEach((player, sessionId) => {
       // Skip dead players
@@ -940,56 +942,57 @@ export class DogfightRoom extends Room<RoomState> {
       // Clamp pitch to prevent loop-de-loops
       player.rotX = Math.max(-Math.PI / 3, Math.min(Math.PI / 3, player.rotX));
 
-      // ===== VELOCITY ALIGNMENT (Kill Lateral Drift) =====
-      // Calculate current speed magnitude
-      const speed = Math.sqrt(
-        player.velocityX ** 2 +
-        player.velocityY ** 2 +
-        player.velocityZ ** 2
-      );
-
-      // Calculate forward vector (where nose points)
-      // Negate X/Z to point out nose instead of tail (180° correction)
+      // ===== AERODYNAMICS & FORCES (Variable Speed) =====
+      // 1. Calculate Forward Vector
       const forward = {
         x: -Math.sin(player.rotY) * Math.cos(player.rotX),
         y: Math.sin(player.rotX),
         z: -Math.cos(player.rotY) * Math.cos(player.rotX)
       };
 
-      // Project current velocity onto forward vector (keep forward momentum)
-      const dot = player.velocityX * forward.x + player.velocityY * forward.y + player.velocityZ * forward.z;
+      // 2. Kill Lateral Drift (Redirect momentum forward)
+      const currentSpeed = Math.sqrt(player.velocityX**2 + player.velocityY**2 + player.velocityZ**2);
 
-      // Re-align velocity to nose direction (eliminates drift)
-      if (speed < MAX_SPEED) {
-        // Add acceleration and redirect
-        const newSpeed = dot + FORWARD_ACCELERATION * deltaTime;
-        player.velocityX = forward.x * newSpeed;
-        player.velocityY = forward.y * newSpeed;
-        player.velocityZ = forward.z * newSpeed;
-      } else {
-        // Just redirect existing speed
-        player.velocityX = forward.x * speed;
-        player.velocityY = forward.y * speed;
-        player.velocityZ = forward.z * speed;
-      }
+      // Redirect all speed to forward direction
+      player.velocityX = forward.x * currentSpeed;
+      player.velocityY = forward.y * currentSpeed;
+      player.velocityZ = forward.z * currentSpeed;
 
-      // Apply gravity (adds downward component to velocity)
+      // 3. Apply Forces
+
+      // Thrust (Engine)
+      player.velocityX += forward.x * FORWARD_ACCELERATION * deltaTime;
+      player.velocityY += forward.y * FORWARD_ACCELERATION * deltaTime;
+      player.velocityZ += forward.z * FORWARD_ACCELERATION * deltaTime;
+
+      // Gravity (Always pulls down)
       player.velocityY += GRAVITY * deltaTime;
 
-      // Enforce speed limits after all forces applied
-      const currentSpeed = Math.sqrt(
-        player.velocityX ** 2 +
-        player.velocityY ** 2 +
-        player.velocityZ ** 2
-      );
+      // Drag (Air Resistance) - Soft cap that fights gravity
+      const DRAG_FACTOR = 0.5;
+      if (currentSpeed > 0) {
+        const drag = currentSpeed * DRAG_FACTOR * deltaTime;
+        player.velocityX -= player.velocityX * (drag / currentSpeed);
+        player.velocityY -= player.velocityY * (drag / currentSpeed);
+        player.velocityZ -= player.velocityZ * (drag / currentSpeed);
+      }
 
-      if (currentSpeed > MAX_SPEED) {
-        const scale = MAX_SPEED / currentSpeed;
+      // Lift (Counter-Gravity)
+      // Only effective when wings are level (cos(rotZ))
+      const liftForce = currentSpeed * 0.25; // Stronger lift to hold 70 speed
+      const bankFactor = Math.cos(player.rotZ);
+      player.velocityY += liftForce * bankFactor * deltaTime;
+
+      // 4. Hard Speed Clamps
+      const realSpeed = Math.sqrt(player.velocityX**2 + player.velocityY**2 + player.velocityZ**2);
+
+      if (realSpeed > MAX_SPEED) {
+        const scale = MAX_SPEED / realSpeed;
         player.velocityX *= scale;
         player.velocityY *= scale;
         player.velocityZ *= scale;
-      } else if (currentSpeed < MIN_SPEED && currentSpeed > 0) {
-        const scale = MIN_SPEED / currentSpeed;
+      } else if (realSpeed < MIN_SPEED && realSpeed > 0) {
+        const scale = MIN_SPEED / realSpeed;
         player.velocityX *= scale;
         player.velocityY *= scale;
         player.velocityZ *= scale;
