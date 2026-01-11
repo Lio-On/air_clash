@@ -1,4 +1,4 @@
-import { Engine, Scene, HemisphericLight, DirectionalLight, Vector3, MeshBuilder, FreeCamera, FollowCamera, StandardMaterial, Color3, Color4, Mesh, Scalar } from '@babylonjs/core';
+import { Engine, Scene, HemisphericLight, DirectionalLight, Vector3, MeshBuilder, FreeCamera, FollowCamera, ArcRotateCamera, StandardMaterial, Color3, Color4, Mesh, Scalar } from '@babylonjs/core';
 import { CONFIG, Team, GamePhase } from '@air-clash/common';
 import { clientConfig } from './config';
 import { UIManager } from './UIManager';
@@ -8,6 +8,8 @@ class Game {
   private engine: Engine;
   private scene: Scene;
   private camera: FollowCamera;
+  private deathCamera: ArcRotateCamera | null = null;
+  private isPlayerDead: boolean = false;
   private ui: UIManager;
   private client: Client;
   private room: Room | null = null;
@@ -84,6 +86,7 @@ class Game {
       this.updatePlayerMeshes();   // Update player mesh positions from server
       this.updateProjectileMeshes(); // Update projectile mesh positions from server
       this.updateCamera();         // Update camera to follow local player
+      this.updateDeathCameraControls(); // Arrow key controls for death camera
       this.scene.render();         // Render the scene
 
       // Log every 60 frames (about once per second at 60fps)
@@ -368,6 +371,13 @@ class Game {
   private handleCountdownPhase(state: any): void {
     console.log('Countdown started!');
 
+    // Reset death state for new match
+    this.isPlayerDead = false;
+    if (this.scene.activeCamera === this.deathCamera) {
+      this.scene.activeCamera = this.camera;
+      console.log('🔄 Switched back to follow camera for new match');
+    }
+
     // Clear any existing countdown
     if (this.countdownInterval) {
       clearInterval(this.countdownInterval);
@@ -546,18 +556,107 @@ class Game {
   }
 
   /**
-   * Update camera to follow local player
+   * Update camera to follow local player or switch to death camera
    */
   private updateCamera(): void {
     if (!this.sessionId || !this.playerMeshes.has(this.sessionId)) {
       return;
     }
 
-    const localPlayerMesh = this.playerMeshes.get(this.sessionId);
-    if (localPlayerMesh && this.camera.lockedTarget !== localPlayerMesh) {
-      // Set camera to follow local player's mesh
-      this.camera.lockedTarget = localPlayerMesh;
-      console.log(`📷 Camera now following ${this.sessionId}`);
+    // Check if local player is dead
+    if (this.room && this.room.state && this.room.state.players) {
+      const localPlayer = this.room.state.players.get(this.sessionId);
+      if (localPlayer && !localPlayer.alive && !this.isPlayerDead) {
+        // Player just died - switch to death camera
+        this.isPlayerDead = true;
+        this.activateDeathCamera();
+        console.log('💀 Player died - switching to spectator camera');
+        return;
+      } else if (localPlayer && localPlayer.alive && this.isPlayerDead) {
+        // Player respawned - switch back to follow camera
+        this.isPlayerDead = false;
+        this.scene.activeCamera = this.camera;
+        console.log('✨ Player respawned - switching back to follow camera');
+      }
+    }
+
+    // Normal follow camera logic (only if player is alive)
+    if (!this.isPlayerDead) {
+      const localPlayerMesh = this.playerMeshes.get(this.sessionId);
+      if (localPlayerMesh && this.camera.lockedTarget !== localPlayerMesh) {
+        // Set camera to follow local player's mesh
+        this.camera.lockedTarget = localPlayerMesh;
+        console.log(`📷 Camera now following ${this.sessionId}`);
+      }
+    }
+  }
+
+  /**
+   * Activate spectator death camera with arrow key controls
+   */
+  private activateDeathCamera(): void {
+    // Create death camera if it doesn't exist
+    if (!this.deathCamera) {
+      this.deathCamera = new ArcRotateCamera(
+        'DeathCamera',
+        0,                    // Alpha (horizontal angle - start at 0)
+        Math.PI / 2.5,        // Beta (72° - horizontal view, looking slightly down)
+        800,                  // Radius (800m - closer default)
+        Vector3.Zero(),       // Target (island center)
+        this.scene
+      );
+
+      // DO NOT attach mouse controls - we use arrow keys instead
+      // this.deathCamera.attachControl(this.engine.getRenderingCanvas()!, true);
+
+      // Zoom limits
+      this.deathCamera.lowerRadiusLimit = 200;   // Can zoom in to 200m
+      this.deathCamera.upperRadiusLimit = 1500;  // Can zoom out to 1500m
+
+      // Very slow auto-rotation
+      this.deathCamera.useAutoRotationBehavior = true;
+      if (this.deathCamera.autoRotationBehavior) {
+        this.deathCamera.autoRotationBehavior.idleRotationSpeed = 0.05; // Very slow spin
+      }
+
+      console.log('🎥 Death camera created (arrow key controls)');
+    }
+
+    // Switch to death camera
+    this.scene.activeCamera = this.deathCamera;
+  }
+
+  /**
+   * Update death camera controls using arrow keys
+   */
+  private updateDeathCameraControls(): void {
+    if (!this.isPlayerDead || !this.deathCamera) {
+      return;
+    }
+
+    const ROTATION_SPEED = 0.02;  // Radians per frame for rotation
+    const ZOOM_SPEED = 10;        // Units per frame for zoom
+
+    // Left/Right = Rotate around island
+    if (this.inputState.left) {
+      this.deathCamera.alpha -= ROTATION_SPEED;
+    }
+    if (this.inputState.right) {
+      this.deathCamera.alpha += ROTATION_SPEED;
+    }
+
+    // Up/Down = Zoom In/Out
+    if (this.inputState.up) {
+      this.deathCamera.radius = Math.max(
+        this.deathCamera.lowerRadiusLimit,
+        this.deathCamera.radius - ZOOM_SPEED
+      );
+    }
+    if (this.inputState.down) {
+      this.deathCamera.radius = Math.min(
+        this.deathCamera.upperRadiusLimit,
+        this.deathCamera.radius + ZOOM_SPEED
+      );
     }
   }
 
@@ -697,10 +796,10 @@ class Game {
     // Sky background - light blue sky
     scene.clearColor = new Color4(0.53, 0.81, 0.98, 1.0);
 
-    // Camera - follow camera for third-person view
-    this.camera = new FollowCamera('followCamera', new Vector3(0, 150, -300), scene);
-    this.camera.radius = 30;           // Distance from target (30 meters behind)
-    this.camera.heightOffset = 10;     // Height above target (10 meters up)
+    // Camera - follow camera for third-person view (scaled for 10x altitude)
+    this.camera = new FollowCamera('followCamera', new Vector3(0, 1500, -3000), scene);
+    this.camera.radius = 80;           // Distance from target (80 meters behind, scaled 10x)
+    this.camera.heightOffset = 30;     // Height above target (30 meters up, scaled 3x)
     this.camera.rotationOffset = 0;    // Camera behind plane, looking forward
     this.camera.cameraAcceleration = 0.05;  // How fast camera moves to target
     this.camera.maxCameraSpeed = 20;   // Maximum camera movement speed
@@ -737,7 +836,7 @@ class Game {
       width: 4000,  // Larger than island
       height: 4000
     }, scene);
-    ocean.position.y = -5; // Slightly below island
+    ocean.position.y = -50; // Slightly below island (10x scale)
 
     // Ocean material - blue water
     const oceanMat = new StandardMaterial('oceanMat', scene);
@@ -745,22 +844,21 @@ class Game {
     oceanMat.specularColor = new Color3(0.3, 0.3, 0.4); // Some water reflection
     ocean.material = oceanMat;
 
-    // Cloud Boundary - visual indicator of soft boundary at 1200m
-    const cloudBoundary = MeshBuilder.CreateTorus('cloudBoundary', {
-      diameter: 2400,    // 1200m radius × 2
-      thickness: 100,    // 100m thick wall of clouds
-      tessellation: 64   // Smooth circle
+    // Cloud Wall - visual indicator of soft boundary at 1200m radius
+    const cloudWall = MeshBuilder.CreateCylinder('cloudWall', {
+      diameter: 2700,      // 1350m radius × 2 (150m buffer beyond 1200m soft boundary)
+      height: 5000,        // Tall wall from ground to sky
+      tessellation: 64     // Smooth circle
     }, scene);
-    cloudBoundary.rotation.x = Math.PI / 2; // Rotate to be vertical (wall)
-    cloudBoundary.position.y = 100;         // Centered at flight altitude
+    cloudWall.position.y = 1000;  // Center at flight altitude (10x scale)
 
     // Cloud material - transparent white mist
     const cloudMat = new StandardMaterial('cloudMat', scene);
     cloudMat.diffuseColor = new Color3(1.0, 1.0, 1.0); // Pure white
     cloudMat.emissiveColor = new Color3(0.8, 0.8, 0.9); // Slight glow
-    cloudMat.alpha = 0.3;  // 30% opacity (transparent)
+    cloudMat.alpha = 0.2;  // 20% opacity (very transparent curtain)
     cloudMat.backFaceCulling = false; // Visible from both sides
-    cloudBoundary.material = cloudMat;
+    cloudWall.material = cloudMat;
 
     return scene;
   }

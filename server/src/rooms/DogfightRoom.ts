@@ -4,9 +4,36 @@ import { RoomState } from '../schemas/RoomState';
 import { PlayerState } from '../schemas/PlayerState';
 import { ProjectileState } from '../schemas/ProjectileState';
 
+/**
+ * Bot AI state (server-side only, not synchronized)
+ */
+enum BotAIState {
+  ATTACK = 'ATTACK',
+  EVASIVE = 'EVASIVE',
+}
+
+interface BotPersonality {
+  aggression: number;      // 0.5-1.5 (fire range multiplier)
+  accuracy: number;        // 0.0-0.3 (aim error in radians)
+  reflexSpeed: number;     // 0.5-1.5 (turn rate multiplier)
+  patience: number;        // 5000-12000 (ms before break-away)
+}
+
+interface BotAIData {
+  state: BotAIState;
+  patrolTargetX: number;
+  patrolTargetZ: number;
+  currentTarget: string | null;  // Enemy session ID
+  lastHitTime: number;           // Timestamp of last successful hit
+  lastStateChange: number;       // Timestamp of last state change
+  evasiveEndTime: number;        // When to exit EVASIVE mode
+  personality: BotPersonality;
+}
+
 export class DogfightRoom extends Room<RoomState> {
   private countdownTimer?: NodeJS.Timeout;
   private projectileIdCounter: number = 0;
+  private botAIData: Map<string, BotAIData> = new Map();  // sessionId -> AI data
 
   /**
    * Called when room is created
@@ -252,6 +279,7 @@ export class DogfightRoom extends Room<RoomState> {
       const bot = new PlayerState(botId, botName, Team.RED, true);
       bot.ready = true; // Bots are always ready
       this.state.players.set(botId, bot);
+      this.initializeBotAI(botId); // Initialize bot AI
       console.log(`🤖 Added ${botName} to RED team`);
       botCounter++;
     }
@@ -263,6 +291,7 @@ export class DogfightRoom extends Room<RoomState> {
       const bot = new PlayerState(botId, botName, Team.BLUE, true);
       bot.ready = true; // Bots are always ready
       this.state.players.set(botId, bot);
+      this.initializeBotAI(botId); // Initialize bot AI
       console.log(`🤖 Added ${botName} to BLUE team`);
       botCounter++;
     }
@@ -319,8 +348,9 @@ export class DogfightRoom extends Room<RoomState> {
     const spawnY = CONFIG.SPAWN_ALTITUDE;
 
     // Rotation: RED faces right (+X direction), BLUE faces left (-X direction)
-    // Z-forward math: 0°=+Z, 90°=+X, 180°=-Z, 270°=-X
-    const rotY = team === Team.RED ? Math.PI / 2 : -Math.PI / 2;  // 90° and -90°
+    // Inverted physics: forward = -Z, so add 180° to face toward center
+    // RED: 90° + 180° = 270° (faces +X), BLUE: -90° + 180° = 90° (faces -X)
+    const rotY = team === Team.RED ? 3 * Math.PI / 2 : Math.PI / 2;
 
     // Arrange planes in a V-formation (spread in Z axis)
     // Center plane at Z=0, others spread with SPAWN_SPACING
@@ -482,8 +512,8 @@ export class DogfightRoom extends Room<RoomState> {
     const radius = 50 + Math.random() * 50;
     player.posX = Math.cos(angle) * radius;
     player.posZ = Math.sin(angle) * radius;
-    player.posY = 10; // On ground
-    player.rotY = Math.atan2(-player.posX, -player.posZ); // Face center
+    player.posY = 100; // On ground (10x scale for realistic altitude)
+    player.rotY = Math.atan2(-player.posX, -player.posZ) + Math.PI; // Face center (add 180° for inverted physics)
 
     // Add player to state
     this.state.players.set(client.sessionId, player);
@@ -542,126 +572,252 @@ export class DogfightRoom extends Room<RoomState> {
     player.name = botName;
     player.ready = true; // Bots are always ready
 
+    // Initialize bot AI
+    this.initializeBotAI(sessionId);
+
     console.log(`🤖 ${oldName} → ${botName} (team ${team})`);
   }
 
   /**
-   * Generate bot AI input based on game state
+   * Generate bot AI input based on game state (SIMPLIFIED AI WITH FIXED PITCH)
    */
   private generateBotInput(bot: PlayerState, botSessionId: string): { up: boolean; down: boolean; left: boolean; right: boolean; shoot: boolean } {
     const input = { up: false, down: false, left: false, right: false, shoot: false };
 
-    // Bot AI constants
-    const FIRE_RANGE = 300;          // Maximum firing distance (meters)
-    const FIRE_ANGLE = Math.PI / 6;   // ~30° cone in front (radians)
-    const BOUNDARY_DISTANCE = 900;    // Start turning inward at 900m from center
-    const AIM_IMPERFECTION = 0.1;    // Random aiming error (radians)
+    // Get or initialize bot AI data
+    let aiData = this.botAIData.get(botSessionId);
+    if (!aiData) {
+      this.initializeBotAI(botSessionId);
+      aiData = this.botAIData.get(botSessionId)!;
+    }
 
-    // Check boundary avoidance first (highest priority)
+    const now = Date.now();
+    const personality = aiData.personality;
+
+    // Physics constants
+    const PROJECTILE_SPEED = 200;         // m/s (bullet speed for lead targeting)
+    const BOUNDARY_DISTANCE = 1200;       // Start turning inward at 1200m
+    const FIRE_ANGLE = Math.PI / 6;       // ~30° cone in front
+
+    // ====================
+    // PRIORITY 1: OBSTACLE AVOIDANCE (HIGHEST PRIORITY)
+    // ====================
+
+    // Ground avoidance
+    if (bot.posY < 100) {
+      input.up = true;
+    }
+
+    // Ceiling avoidance (aggressively push down if flying high)
+    if (bot.posY > 900) {
+      input.down = true;
+    }
+
+    // Map edge avoidance
     const distanceFromCenter = Math.sqrt(bot.posX ** 2 + bot.posZ ** 2);
     if (distanceFromCenter > BOUNDARY_DISTANCE) {
       // Turn toward center (add 180° to match inverted physics forward vector)
       const angleToCenter = Math.atan2(0 - bot.posX, 0 - bot.posZ) + Math.PI;
       const angleDiff = this.normalizeAngle(angleToCenter - bot.rotY);
 
-      if (angleDiff > 0.1) {
+      const turnThreshold = 0.1 / personality.reflexSpeed;
+      if (angleDiff > turnThreshold) {
         input.right = true;
-      } else if (angleDiff < -0.1) {
+      } else if (angleDiff < -turnThreshold) {
         input.left = true;
-      }
-
-      // Pitch slightly up to avoid ground
-      if (bot.posY < 80) {
-        input.up = true;
       }
 
       return input;
     }
 
-    // Find nearest enemy target
+    // ====================
+    // EVASIVE MODE (Break-Away Logic)
+    // ====================
+    if (aiData.state === BotAIState.EVASIVE) {
+      // Check if evasive period ended
+      if (now > aiData.evasiveEndTime) {
+        // Exit EVASIVE, return to ATTACK (always ready to fight)
+        aiData.state = BotAIState.ATTACK;
+        aiData.currentTarget = null;
+        aiData.lastStateChange = now;
+        aiData.lastHitTime = now; // Reset timer
+      } else {
+        // EVASIVE behavior: Pitch down hard + random roll
+        input.down = true;
+        input.left = Math.random() > 0.5;
+        input.right = !input.left;
+
+        // Override with ground avoidance
+        if (bot.posY < 100) {
+          input.up = true;
+          input.down = false;
+        }
+
+        return input;
+      }
+    }
+
+    // ====================
+    // PRIORITY 2: FIND ENEMY (WITH STICKY TARGETING)
+    // ====================
     let nearestEnemy: PlayerState | null = null;
+    let nearestEnemyId: string | null = null;
     let nearestDistance = Infinity;
 
-    this.state.players.forEach((enemy, enemySessionId) => {
-      // Skip self, teammates, and dead players
-      if (enemySessionId === botSessionId || enemy.team === bot.team || !enemy.alive) {
-        return;
+    // STICKY TARGETING: Check if we should stick to current target
+    const CHASE_STICKINESS = 10000; // 10 seconds minimum lock-on
+    const chaseDuration = now - aiData.lastStateChange;
+    const shouldStickToTarget = aiData.currentTarget && chaseDuration < CHASE_STICKINESS;
+
+    if (shouldStickToTarget) {
+      // Try to stick to current target if still valid
+      const currentTarget = this.state.players.get(aiData.currentTarget!);
+      if (currentTarget && currentTarget.alive && currentTarget.team !== bot.team) {
+        // Current target is still valid - stick to it!
+        nearestEnemy = currentTarget;
+        nearestEnemyId = aiData.currentTarget;
+
+        const dx = currentTarget.posX - bot.posX;
+        const dy = currentTarget.posY - bot.posY;
+        const dz = currentTarget.posZ - bot.posZ;
+        nearestDistance = Math.sqrt(dx ** 2 + dy ** 2 + dz ** 2);
+      } else {
+        // Current target died or invalid - allow retargeting
+        aiData.currentTarget = null;
       }
+    }
 
-      const dx = enemy.posX - bot.posX;
-      const dy = enemy.posY - bot.posY;
-      const dz = enemy.posZ - bot.posZ;
-      const distance = Math.sqrt(dx ** 2 + dy ** 2 + dz ** 2);
-
-      if (distance < nearestDistance) {
-        nearestDistance = distance;
-        nearestEnemy = enemy;
-      }
-    });
-
-    // If no enemy found, fly toward center
+    // If not sticking to target (or target died), find nearest enemy
     if (!nearestEnemy) {
-      const angleToCenter = Math.atan2(0 - bot.posX, 0 - bot.posZ) + Math.PI;
-      const angleDiff = this.normalizeAngle(angleToCenter - bot.rotY);
+      this.state.players.forEach((enemy, enemySessionId) => {
+        // Skip self, teammates, and dead players
+        if (enemySessionId === botSessionId || enemy.team === bot.team || !enemy.alive) {
+          return;
+        }
 
-      if (angleDiff > 0.1) {
+        const dx = enemy.posX - bot.posX;
+        const dy = enemy.posY - bot.posY;
+        const dz = enemy.posZ - bot.posZ;
+        const distance = Math.sqrt(dx ** 2 + dy ** 2 + dz ** 2);
+
+        if (distance < nearestDistance) {
+          nearestDistance = distance;
+          nearestEnemy = enemy;
+          nearestEnemyId = enemySessionId;
+        }
+      });
+    }
+
+    // ====================
+    // STATE TRANSITIONS
+    // ====================
+    if (nearestEnemy) {
+      // Found enemy - enter/stay in ATTACK
+      if (aiData.state !== BotAIState.ATTACK || aiData.currentTarget !== nearestEnemyId) {
+        aiData.state = BotAIState.ATTACK;
+        aiData.currentTarget = nearestEnemyId;
+        aiData.lastStateChange = now; // Reset timer when acquiring new target
+        aiData.lastHitTime = now;
+      }
+
+      // Check break-away timer (patience timeout)
+      if (aiData.state === BotAIState.ATTACK) {
+        const timeSinceLastHit = now - aiData.lastHitTime;
+        if (timeSinceLastHit > personality.patience) {
+          // Enter EVASIVE mode
+          aiData.state = BotAIState.EVASIVE;
+          aiData.evasiveEndTime = now + 3000; // 3 seconds of evasive
+          aiData.lastStateChange = now;
+          return this.generateBotInput(bot, botSessionId); // Recurse to execute EVASIVE immediately
+        }
+      }
+    }
+
+    // ====================
+    // ATTACK MODE (Lead Targeting)
+    // ====================
+    if (aiData.state === BotAIState.ATTACK && nearestEnemy) {
+      // Store enemy reference for type safety
+      const enemy: PlayerState = nearestEnemy;
+
+      // LEAD TARGETING: Predict where enemy will be
+      const distance = nearestDistance;
+
+      // Clamp time to impact to prevent aiming at "ghosts" miles away
+      // Max prediction: 1.5 seconds ahead
+      const timeToImpact = Math.min(distance / PROJECTILE_SPEED, 1.5);
+
+      // Predicted enemy position
+      const predictedX = enemy.posX + (enemy.velocityX * timeToImpact);
+      let predictedY = enemy.posY + (enemy.velocityY * timeToImpact);
+      const predictedZ = enemy.posZ + (enemy.velocityZ * timeToImpact);
+
+      // Clamp vertical aim to keep fight lower (200-800m)
+      // Don't chase targets into the stratosphere or ground
+      if (predictedY < 200) predictedY = 200;
+      if (predictedY > 800) predictedY = 800;
+
+      // Calculate direction to PREDICTED position
+      const dx = predictedX - bot.posX;
+      const dy = predictedY - bot.posY;
+      const dz = predictedZ - bot.posZ;
+
+      // Calculate desired yaw (add 180° for inverted physics forward vector)
+      const desiredYaw = Math.atan2(dx, dz) + Math.PI;
+
+      // Add personality-based aim error
+      const aimError = (Math.random() - 0.5) * personality.accuracy;
+      const targetYaw = desiredYaw + aimError;
+
+      // Yaw control (turn toward predicted position)
+      const yawDiff = this.normalizeAngle(targetYaw - bot.rotY);
+      const turnThreshold = 0.05 / personality.reflexSpeed;
+
+      if (yawDiff > turnThreshold) {
         input.right = true;
-      } else if (angleDiff < -0.1) {
+      } else if (yawDiff < -turnThreshold) {
         input.left = true;
       }
 
-      // Maintain altitude
-      if (bot.posY < 80) {
-        input.up = true;
-      } else if (bot.posY > 120) {
-        input.down = true;
+      // Calculate desired pitch
+      const horizontalDistance = Math.sqrt(dx ** 2 + dz ** 2);
+      const desiredPitch = Math.atan2(-dy, horizontalDistance); // Negative dy because up is negative rotX
+
+      // CRITICAL FIX: Pitch control with CORRECTED logic
+      // In inverted physics: Up is negative rotX, Down is positive rotX
+      // If pitchDiff > 0: target is MORE positive (down) → press DOWN
+      // If pitchDiff < 0: target is MORE negative (up) → press UP
+      const pitchDiff = this.normalizeAngle(desiredPitch - bot.rotX);
+
+      if (pitchDiff > turnThreshold) {
+        input.down = true;  // Target is below current → pitch down
+      } else if (pitchDiff < -turnThreshold) {
+        input.up = true;    // Target is above current → pitch up
+      }
+
+      // Shooting logic (personality-based fire range)
+      const fireRange = 300 * personality.aggression; // 150-450m depending on aggression
+      const isInRange = distance < fireRange;
+      const isInFront = Math.abs(yawDiff) < FIRE_ANGLE && Math.abs(pitchDiff) < FIRE_ANGLE;
+
+      if (isInRange && isInFront) {
+        input.shoot = true;
       }
 
       return input;
     }
 
-    // Calculate direction to target
-    const dx = nearestEnemy.posX - bot.posX;
-    const dy = nearestEnemy.posY - bot.posY;
-    const dz = nearestEnemy.posZ - bot.posZ;
-
-    // Calculate desired yaw (horizontal angle) - add 180° to match inverted physics forward vector
-    const desiredYaw = Math.atan2(dx, dz) + Math.PI;
-
-    // Add imperfect aim (randomness)
-    const aimError = (Math.random() - 0.5) * AIM_IMPERFECTION;
-    const targetYaw = desiredYaw + aimError;
-
-    // Calculate angle difference
-    const yawDiff = this.normalizeAngle(targetYaw - bot.rotY);
-
-    // Yaw control (turn toward target)
-    if (yawDiff > 0.05) {
-      input.right = true;
-    } else if (yawDiff < -0.05) {
-      input.left = true;
-    }
-
-    // Calculate desired pitch (vertical angle)
-    const horizontalDistance = Math.sqrt(dx ** 2 + dz ** 2);
-    const desiredPitch = Math.atan2(-dy, horizontalDistance); // Negative dy because up is negative rotX
-
-    // Pitch control (aim at target vertically)
-    const pitchDiff = this.normalizeAngle(desiredPitch - bot.rotX);
-
-    if (pitchDiff > 0.05) {
-      input.up = true;
-    } else if (pitchDiff < -0.05) {
-      input.down = true;
-    }
-
-    // Shooting logic: fire if target is close and roughly in front
-    const isInRange = nearestDistance < FIRE_RANGE;
-    const isInFront = Math.abs(yawDiff) < FIRE_ANGLE && Math.abs(pitchDiff) < FIRE_ANGLE;
-
-    if (isInRange && isInFront) {
-      input.shoot = true;
-    }
+    // ====================
+    // NO ENEMY FOUND: ORGANIC WANDER
+    // ====================
+    // Gentle random input
+    if (Math.random() < 0.02) input.left = true;
+    if (Math.random() < 0.02) input.right = true;
+    if (Math.random() < 0.01) input.up = true;
+    if (Math.random() < 0.01) input.down = true;
+    // Hard clamp for absolute ceiling/floor only
+    if (bot.posY < 100) input.up = true;
+    if (bot.posY > 900) input.down = true;
 
     return input;
   }
@@ -676,23 +832,62 @@ export class DogfightRoom extends Room<RoomState> {
   }
 
   /**
+   * Generate random bot personality
+   */
+  private generateBotPersonality(): BotPersonality {
+    return {
+      aggression: 0.5 + Math.random(),        // 0.5-1.5
+      accuracy: Math.random() * 0.3,          // 0.0-0.3
+      reflexSpeed: 0.5 + Math.random(),       // 0.5-1.5
+      patience: 5000 + Math.random() * 7000,  // 5000-12000ms
+    };
+  }
+
+  /**
+   * Generate random patrol point within arena
+   */
+  private generatePatrolPoint(): { x: number; z: number } {
+    const angle = Math.random() * Math.PI * 2;
+    const radius = 200 + Math.random() * 600; // 200-800m from center
+    return {
+      x: Math.cos(angle) * radius,
+      z: Math.sin(angle) * radius,
+    };
+  }
+
+  /**
+   * Initialize bot AI data
+   */
+  private initializeBotAI(sessionId: string): void {
+    this.botAIData.set(sessionId, {
+      state: BotAIState.ATTACK,
+      patrolTargetX: 0,  // Not used anymore
+      patrolTargetZ: 0,  // Not used anymore
+      currentTarget: null,
+      lastHitTime: Date.now(),
+      lastStateChange: Date.now(),
+      evasiveEndTime: 0,
+      personality: this.generateBotPersonality(),
+    });
+  }
+
+  /**
    * Update physics for all players
    */
   private updatePhysics(deltaTime: number): void {
     // Only update during match
     if (this.state.phase !== GamePhase.IN_MATCH) return;
 
-    // Physics constants (m/s and m/s²)
-    const PITCH_SPEED = 1.0;        // Radians per second (pitch up/down) - reduced for smoother control
-    const YAW_SPEED = 0.7;          // Radians per second (turn left/right) - reduced for smoother control
+    // Physics constants (m/s and m/s²) - BANK-TO-TURN MODEL
+    const PITCH_SPEED = 1.0;        // Radians per second (pitch up/down)
+    const YAW_SPEED = 0.3;          // Radians per second (weak rudder)
     const ROLL_SPEED = 2.0;         // Radians per second (banking speed)
     const MAX_ROLL = Math.PI / 3;   // 60° maximum bank angle
+    const RATE_OF_TURN = 1.5;       // How fast banking turns the plane (induced yaw from roll)
     const FORWARD_ACCELERATION = 20; // m/s² (throttle)
-    const AIR_RESISTANCE = 0.5;     // Drag coefficient
     const MIN_SPEED = 30;           // Minimum speed (m/s)
     const MAX_SPEED = 100;          // Maximum speed (m/s)
     const GRAVITY = -9.8;           // m/s² (downward)
-    const LIFT_COEFFICIENT = 0.18;  // Lift generated per m/s of forward speed (balanced at ~54 m/s)
 
     this.state.players.forEach((player, sessionId) => {
       // Skip dead players
@@ -726,16 +921,8 @@ export class DogfightRoom extends Room<RoomState> {
         player.rotX += PITCH_SPEED * deltaTime;  // Nose down
       }
 
-      // Yaw control (left/right)
-      // Standard 3D: Left = negative rotation, Right = positive rotation
-      if (input.left) {
-        player.rotY -= YAW_SPEED * deltaTime;  // Turn left
-      }
-      if (input.right) {
-        player.rotY += YAW_SPEED * deltaTime;  // Turn right
-      }
-
-      // Roll (Banking) - planes bank into turns like real aircraft
+      // BANK-TO-TURN: Left/Right controls Roll, which induces Yaw
+      // Roll (Banking) - primary control for turning
       let targetRoll = 0;
       if (input.left) {
         targetRoll = -MAX_ROLL;  // Bank left (negative roll)
@@ -746,47 +933,50 @@ export class DogfightRoom extends Room<RoomState> {
       const rollDiff = targetRoll - player.rotZ;
       player.rotZ += rollDiff * ROLL_SPEED * deltaTime;
 
+      // Induced Yaw from Banking (this is how planes actually turn)
+      // Banking right (positive rotZ) -> turn right (positive rotY)
+      player.rotY += player.rotZ * RATE_OF_TURN * deltaTime;
+
       // Clamp pitch to prevent loop-de-loops
       player.rotX = Math.max(-Math.PI / 3, Math.min(Math.PI / 3, player.rotX));
 
-      // Forward thrust (Z-Forward coordinate system)
-      // Negate X/Z to point out nose instead of tail (180° correction)
-      const forward = {
-        x: -Math.sin(player.rotY) * Math.cos(player.rotX),  // Negate X
-        y: Math.sin(player.rotX),                           // Keep Y (pitch is correct for human controls)
-        z: -Math.cos(player.rotY) * Math.cos(player.rotX)   // Negate Z
-      };
-
-      // Apply forward acceleration
-      player.velocityX += forward.x * FORWARD_ACCELERATION * deltaTime;
-      player.velocityY += forward.y * FORWARD_ACCELERATION * deltaTime;
-      player.velocityZ += forward.z * FORWARD_ACCELERATION * deltaTime;
-
-      // Apply gravity
-      player.velocityY += GRAVITY * deltaTime;
-
-      // Apply lift (upward force proportional to forward speed)
-      // Calculate horizontal speed (speed in XZ plane)
-      const horizontalSpeed = Math.sqrt(player.velocityX ** 2 + player.velocityZ ** 2);
-      // Lift counters gravity, stronger at higher speeds
-      const lift = horizontalSpeed * LIFT_COEFFICIENT;
-      player.velocityY += lift * deltaTime;
-
-      // Apply air resistance
+      // ===== VELOCITY ALIGNMENT (Kill Lateral Drift) =====
+      // Calculate current speed magnitude
       const speed = Math.sqrt(
         player.velocityX ** 2 +
         player.velocityY ** 2 +
         player.velocityZ ** 2
       );
 
-      if (speed > 0) {
-        const drag = AIR_RESISTANCE * deltaTime;
-        player.velocityX *= (1 - drag);
-        player.velocityY *= (1 - drag);
-        player.velocityZ *= (1 - drag);
+      // Calculate forward vector (where nose points)
+      // Negate X/Z to point out nose instead of tail (180° correction)
+      const forward = {
+        x: -Math.sin(player.rotY) * Math.cos(player.rotX),
+        y: Math.sin(player.rotX),
+        z: -Math.cos(player.rotY) * Math.cos(player.rotX)
+      };
+
+      // Project current velocity onto forward vector (keep forward momentum)
+      const dot = player.velocityX * forward.x + player.velocityY * forward.y + player.velocityZ * forward.z;
+
+      // Re-align velocity to nose direction (eliminates drift)
+      if (speed < MAX_SPEED) {
+        // Add acceleration and redirect
+        const newSpeed = dot + FORWARD_ACCELERATION * deltaTime;
+        player.velocityX = forward.x * newSpeed;
+        player.velocityY = forward.y * newSpeed;
+        player.velocityZ = forward.z * newSpeed;
+      } else {
+        // Just redirect existing speed
+        player.velocityX = forward.x * speed;
+        player.velocityY = forward.y * speed;
+        player.velocityZ = forward.z * speed;
       }
 
-      // Enforce speed limits
+      // Apply gravity (adds downward component to velocity)
+      player.velocityY += GRAVITY * deltaTime;
+
+      // Enforce speed limits after all forces applied
       const currentSpeed = Math.sqrt(
         player.velocityX ** 2 +
         player.velocityY ** 2 +
@@ -810,9 +1000,9 @@ export class DogfightRoom extends Room<RoomState> {
       player.posY += player.velocityY * deltaTime;
       player.posZ += player.velocityZ * deltaTime;
 
-      // Ground collision (simple altitude check)
-      if (player.posY < 10) {
-        player.posY = 10;
+      // Ground collision (simple altitude check) - 10x scale for realistic altitude
+      if (player.posY < 100) {
+        player.posY = 100;
         player.velocityY = Math.max(0, player.velocityY); // Stop downward velocity
       }
 
@@ -841,6 +1031,29 @@ export class DogfightRoom extends Room<RoomState> {
           const clampFactor = HARD_BOUNDARY / distanceFromCenter;
           player.posX *= clampFactor;
           player.posZ *= clampFactor;
+        }
+      }
+
+      // Soft Ceiling - Force nose down when flying too high
+      const SOFT_CEILING = 1300;  // Start forcing descent
+      const HARD_CEILING = 1500;  // Maximum altitude (physical clamp)
+
+      if (player.posY > SOFT_CEILING) {
+        // Calculate how far above ceiling (0 = at soft ceiling, 1 = at hard ceiling)
+        const ceilingPressure = Math.min(1, (player.posY - SOFT_CEILING) / (HARD_CEILING - SOFT_CEILING));
+
+        // Force pitch down (rotX negative = nose down)
+        const targetPitch = -Math.PI / 6; // Target -30° nose down
+        const pitchRate = PITCH_SPEED * 2.0 * ceilingPressure * deltaTime; // Up to 2x normal pitch speed
+        const pitchDiff = targetPitch - player.rotX;
+
+        // Apply forced pitch down toward target
+        player.rotX += Math.sign(pitchDiff) * Math.min(Math.abs(pitchDiff), pitchRate);
+
+        // Hard clamp at maximum altitude
+        if (player.posY > HARD_CEILING) {
+          player.posY = HARD_CEILING;
+          player.velocityY = Math.min(0, player.velocityY); // Only allow downward velocity
         }
       }
     });
@@ -896,6 +1109,14 @@ export class DogfightRoom extends Room<RoomState> {
               this.state.scoreRed++;
             } else {
               this.state.scoreBlue++;
+            }
+
+            // Reset bot's break-away timer on successful hit
+            if (killer.isBot) {
+              const killerAI = this.botAIData.get(projectile.ownerId);
+              if (killerAI) {
+                killerAI.lastHitTime = Date.now();
+              }
             }
 
             console.log(`💥 ${killer.name} hit ${player.name}! (${killer.team} score: ${killer.team === 'RED' ? this.state.scoreRed : this.state.scoreBlue})`);

@@ -43,8 +43,8 @@ export const CONFIG = {
 
   // Arena and spawn configuration
   ARENA_SIZE: 2000, // meters (arena is 2000x2000)
-  SPAWN_ALTITUDE: 100, // meters above ground
-  SPAWN_DISTANCE_FROM_CENTER: 800, // meters from island center
+  SPAWN_ALTITUDE: 200, // meters above ground (lower altitude for combat start)
+  SPAWN_DISTANCE_FROM_CENTER: 1100, // meters from island center (just inside 1200m soft boundary)
   SPAWN_INITIAL_SPEED: 50, // meters per second
   SPAWN_SPACING: 50, // meters between planes on same team
 } as const;
