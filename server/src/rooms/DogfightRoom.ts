@@ -907,12 +907,16 @@ export class DogfightRoom extends Room<RoomState> {
 
       // Shooting (both humans and bots can shoot)
       if (input.shoot) {
-        // Check cooldown (250ms = 4 shots/second)
-        const now = Date.now();
-        const lastShot = (player as any).lastShootTime || 0;
-        if (now - lastShot >= 250) {
-          this.spawnProjectile(player, sessionId);
-          (player as any).lastShootTime = now;
+        // Check ammo first
+        if (player.ammo > 0) {
+          // Check cooldown (250ms = 4 shots/second)
+          const now = Date.now();
+          const lastShot = (player as any).lastShootTime || 0;
+          if (now - lastShot >= 250) {
+            player.ammo -= 1; // Consume ammo
+            this.spawnProjectile(player, sessionId);
+            (player as any).lastShootTime = now;
+          }
         }
       }
 

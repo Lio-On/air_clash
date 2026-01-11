@@ -430,7 +430,7 @@ class Game {
       this.ui.updateHUD(
         Math.sqrt(localPlayer.velocityX ** 2 + localPlayer.velocityY ** 2 + localPlayer.velocityZ ** 2),
         localPlayer.posY,
-        100  // Ammo (placeholder, will be added later)
+        localPlayer.ammo
       );
     }
   }

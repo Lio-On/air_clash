@@ -64,6 +64,10 @@ export class PlayerState extends Schema {
   @type('number')
   kills: number = 0;
 
+  // Ammo counter
+  @type('number')
+  ammo: number = 200;
+
   constructor(id: string, name: string, team: Team, isBot: boolean = false) {
     super();
     this.id = id;
@@ -73,5 +77,6 @@ export class PlayerState extends Schema {
     this.ready = false;
     this.alive = false;
     this.kills = 0;
+    this.ammo = 200;
   }
 }
