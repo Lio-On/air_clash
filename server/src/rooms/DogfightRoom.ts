@@ -603,14 +603,16 @@ export class DogfightRoom extends Room<RoomState> {
     // PRIORITY 1: OBSTACLE AVOIDANCE (HIGHEST PRIORITY)
     // ====================
 
-    // Ground avoidance
-    if (bot.posY < 100) {
-      input.up = true;
+    // Ground avoidance (INVERTED TEST)
+    // If low, Push DOWN to climb (Counter-intuitive test)
+    if (bot.posY < 200) {
+      input.down = true; // Was input.up
     }
 
-    // Ceiling avoidance (aggressively push down if flying high)
+    // Ceiling avoidance
+    // If high, Pull UP to descend
     if (bot.posY > 900) {
-      input.down = true;
+      input.up = true; // Was input.down
     }
 
     // Map edge avoidance
@@ -815,9 +817,9 @@ export class DogfightRoom extends Room<RoomState> {
     if (Math.random() < 0.02) input.right = true;
     if (Math.random() < 0.01) input.up = true;
     if (Math.random() < 0.01) input.down = true;
-    // Hard clamp for absolute ceiling/floor only
-    if (bot.posY < 100) input.up = true;
-    if (bot.posY > 900) input.down = true;
+    // Hard clamp for absolute ceiling/floor (INVERTED)
+    if (bot.posY < 200) input.down = true; // Danger Low -> Push Down
+    if (bot.posY > 900) input.up = true;   // Danger High -> Pull Up
 
     return input;
   }
@@ -1016,10 +1018,16 @@ export class DogfightRoom extends Room<RoomState> {
       player.posY += player.velocityY * deltaTime;
       player.posZ += player.velocityZ * deltaTime;
 
-      // Ground collision (simple altitude check) - 10x scale for realistic altitude
-      if (player.posY < 100) {
-        player.posY = 100;
-        player.velocityY = Math.max(0, player.velocityY); // Stop downward velocity
+      // Ground collision (Crash Logic)
+      // If they hit altitude 0, they die instantly.
+      if (player.posY <= 0) {
+        player.posY = 0; // Set to ground level
+        console.log(`💥 ${player.name} crashed into the ground!`);
+        player.alive = false;
+
+        // Update alive counts for team tracking
+        this.updateAliveCounts();
+        return; // Stop processing physics for this player
       }
 
       // Soft Boundaries - Force turn back toward center instead of wrapping
