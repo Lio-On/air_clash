@@ -1,5 +1,5 @@
 import { Room, Client } from 'colyseus';
-import { CONFIG, Team, GamePhase } from '@air-clash/common';
+import { CONFIG, Team, GamePhase, getTerrainHeight, TERRAIN_CONFIG } from '@air-clash/common';
 import { RoomState } from '../schemas/RoomState';
 import { PlayerState } from '../schemas/PlayerState';
 import { ProjectileState } from '../schemas/ProjectileState';
@@ -1022,11 +1022,21 @@ export class DogfightRoom extends Room<RoomState> {
       player.posY += player.velocityY * deltaTime;
       player.posZ += player.velocityZ * deltaTime;
 
-      // Ground collision (Crash Logic)
-      // If they hit altitude 0, they die instantly.
-      if (player.posY <= 0) {
-        player.posY = 0; // Set to ground level
-        console.log(`💥 ${player.name} crashed into the ground!`);
+      // Terrain collision (Crash Logic)
+      // Check if plane hits terrain or water
+      const terrainHeight = getTerrainHeight(player.posX, player.posZ);
+      const collisionHeight = Math.max(terrainHeight, TERRAIN_CONFIG.WATER_LEVEL);
+
+      if (player.posY <= collisionHeight) {
+        player.posY = collisionHeight; // Set to collision surface
+
+        // Determine crash type for better feedback
+        if (terrainHeight > TERRAIN_CONFIG.WATER_LEVEL) {
+          console.log(`💥 ${player.name} crashed into the mountain!`);
+        } else {
+          console.log(`💥 ${player.name} crashed into the water!`);
+        }
+
         player.alive = false;
 
         // Update alive counts for team tracking

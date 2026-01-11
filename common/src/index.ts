@@ -62,3 +62,8 @@ export interface DebugConfig {
   showColliders: boolean;
   verboseLogging: boolean;
 }
+
+/**
+ * Terrain utilities
+ */
+export { getTerrainHeight, isUnderwater, TERRAIN_CONFIG } from './terrain';

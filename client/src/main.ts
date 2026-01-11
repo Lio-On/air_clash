@@ -1,5 +1,5 @@
-import { Engine, Scene, HemisphericLight, DirectionalLight, Vector3, MeshBuilder, FreeCamera, FollowCamera, ArcRotateCamera, StandardMaterial, Color3, Color4, Mesh, Scalar } from '@babylonjs/core';
-import { CONFIG, Team, GamePhase } from '@air-clash/common';
+import { Engine, Scene, HemisphericLight, DirectionalLight, Vector3, MeshBuilder, FreeCamera, FollowCamera, ArcRotateCamera, StandardMaterial, Color3, Color4, Mesh, Scalar, VertexData } from '@babylonjs/core';
+import { CONFIG, Team, GamePhase, getTerrainHeight, TERRAIN_CONFIG } from '@air-clash/common';
 import { clientConfig } from './config';
 import { UIManager } from './UIManager';
 import { Client, Room } from 'colyseus.js';
@@ -817,32 +817,33 @@ class Game {
     sunLight.diffuse = new Color3(1.0, 0.95, 0.8); // Warm sunlight
     sunLight.specular = new Color3(1.0, 1.0, 0.9);
 
-    // Island placeholder - circular terrain
-    const island = MeshBuilder.CreateDisc('island', {
-      radius: 1000,  // 2000m diameter arena (1000m radius)
-      tessellation: 64
-    }, scene);
-    island.rotation.x = Math.PI / 2; // Rotate to be horizontal
-    island.position.y = 0;
+    // Procedural terrain mesh using shared terrain function
+    const terrainSize = 2000; // 2000m x 2000m terrain
+    const terrainSubdivisions = 128; // High resolution for smooth mountains
+    const terrain = this.createProceduralTerrain(scene, terrainSize, terrainSubdivisions);
 
-    // Island material - green/brown terrain
-    const islandMat = new StandardMaterial('islandMat', scene);
-    islandMat.diffuseColor = new Color3(0.25, 0.5, 0.2); // Terrain green
-    islandMat.specularColor = new Color3(0.1, 0.1, 0.1); // Low specularity for terrain
-    island.material = islandMat;
+    // Terrain material - height-based coloring
+    const terrainMat = new StandardMaterial('terrainMat', scene);
+    terrainMat.diffuseColor = new Color3(0.25, 0.5, 0.2); // Base terrain green
+    terrainMat.specularColor = new Color3(0.1, 0.1, 0.1); // Low specularity for terrain
+    terrain.material = terrainMat;
 
     // Ocean plane - water around the island
     const ocean = MeshBuilder.CreateGround('ocean', {
       width: 4000,  // Larger than island
       height: 4000
     }, scene);
-    ocean.position.y = -50; // Slightly below island (10x scale)
+    ocean.position.y = -5; // Below the raised island terrain
 
     // Ocean material - blue water
     const oceanMat = new StandardMaterial('oceanMat', scene);
     oceanMat.diffuseColor = new Color3(0.1, 0.3, 0.6); // Deep blue water
     oceanMat.specularColor = new Color3(0.3, 0.3, 0.4); // Some water reflection
+    oceanMat.alpha = 0.9; // Slightly transparent (reduced from 0.7)
     ocean.material = oceanMat;
+
+    // Scatter trees on terrain
+    this.scatterTrees(scene, 150); // Add 150 trees
 
     // Cloud Wall - visual indicator of soft boundary at 1200m radius
     const cloudWall = MeshBuilder.CreateCylinder('cloudWall', {
@@ -861,6 +862,134 @@ class Game {
     cloudWall.material = cloudMat;
 
     return scene;
+  }
+
+  /**
+   * Create procedural terrain mesh using shared terrain height function
+   */
+  private createProceduralTerrain(scene: Scene, size: number, subdivisions: number): Mesh {
+    const terrain = new Mesh('terrain', scene);
+
+    // Calculate vertices
+    const verticesPerSide = subdivisions + 1;
+    const positions: number[] = [];
+    const indices: number[] = [];
+    const normals: number[] = [];
+
+    // Generate vertices with height from shared terrain function
+    for (let z = 0; z < verticesPerSide; z++) {
+      for (let x = 0; x < verticesPerSide; x++) {
+        // Map from grid coordinates to world coordinates
+        const worldX = (x / subdivisions - 0.5) * size;
+        const worldZ = (z / subdivisions - 0.5) * size;
+
+        // Get height from shared terrain function
+        const height = getTerrainHeight(worldX, worldZ);
+
+        positions.push(worldX, height, worldZ);
+      }
+    }
+
+    // Generate indices (triangles)
+    for (let z = 0; z < subdivisions; z++) {
+      for (let x = 0; x < subdivisions; x++) {
+        const topLeft = z * verticesPerSide + x;
+        const topRight = topLeft + 1;
+        const bottomLeft = (z + 1) * verticesPerSide + x;
+        const bottomRight = bottomLeft + 1;
+
+        // Two triangles per quad
+        indices.push(topLeft, bottomLeft, topRight);
+        indices.push(topRight, bottomLeft, bottomRight);
+      }
+    }
+
+    // Create vertex data
+    const vertexData = new VertexData();
+    vertexData.positions = positions;
+    vertexData.indices = indices;
+
+    // Compute normals for proper lighting
+    VertexData.ComputeNormals(positions, indices, normals);
+    vertexData.normals = normals;
+
+    // Apply to mesh
+    vertexData.applyToMesh(terrain);
+
+    return terrain;
+  }
+
+  /**
+   * Create a simple low-poly tree mesh
+   */
+  private createTreeMesh(scene: Scene): Mesh {
+    // Tree trunk (cylinder) - much smaller
+    const trunk = MeshBuilder.CreateCylinder('treeTrunk', {
+      height: 5,
+      diameter: 1,
+      tessellation: 6
+    }, scene);
+
+    // Tree foliage (cone) - much smaller
+    const foliage = MeshBuilder.CreateCylinder('treeFoliage', {
+      height: 6,
+      diameterTop: 0.5,
+      diameterBottom: 4,
+      tessellation: 6
+    }, scene);
+    foliage.position.y = 5; // Sit on top of trunk
+
+    // Merge into single mesh
+    const tree = Mesh.MergeMeshes([trunk, foliage], true, true, undefined, false, true);
+    if (!tree) {
+      return trunk; // Fallback if merge fails
+    }
+
+    // Tree material - brown trunk, green foliage
+    const treeMat = new StandardMaterial('treeMat', scene);
+    treeMat.diffuseColor = new Color3(0.15, 0.4, 0.1); // Dark green
+    treeMat.specularColor = new Color3(0.05, 0.05, 0.05); // Low specularity
+    tree.material = treeMat;
+
+    return tree;
+  }
+
+  /**
+   * Scatter trees across the terrain
+   */
+  private scatterTrees(scene: Scene, count: number): void {
+    // Create a single tree template
+    const treeTemplate = this.createTreeMesh(scene);
+    treeTemplate.isVisible = false; // Hide the template
+
+    const SNOW_LEVEL = 80; // Don't place trees above snow line (reduced from 600)
+
+    for (let i = 0; i < count; i++) {
+      // Random position within terrain bounds (stay away from spawn at 1100m)
+      const angle = Math.random() * Math.PI * 2;
+      const distance = Math.random() * 500; // Within 500m of center (reduced from 800m)
+      const x = Math.cos(angle) * distance;
+      const z = Math.sin(angle) * distance;
+
+      // Get terrain height at this position
+      const terrainHeight = getTerrainHeight(x, z);
+
+      // Only place trees above water and below snow line
+      if (terrainHeight > TERRAIN_CONFIG.WATER_LEVEL + 10 && terrainHeight < SNOW_LEVEL) {
+        // Create instance of tree
+        const tree = treeTemplate.createInstance(`tree_${i}`);
+        tree.position.x = x;
+        tree.position.y = terrainHeight;
+        tree.position.z = z;
+
+        // Random rotation for variety
+        tree.rotation.y = Math.random() * Math.PI * 2;
+
+        // Random scale for variety (0.8 to 1.2)
+        const scale = 0.8 + Math.random() * 0.4;
+        tree.scaling = new Vector3(scale, scale, scale);
+      }
+    }
   }
 }
 
