@@ -953,7 +953,7 @@ export class DogfightRoom extends Room<RoomState> {
       };
 
       // 2. Kill Lateral Drift
-      const currentSpeed = Math.sqrt(player.velocityX**2 + player.velocityY**2 + player.velocityZ**2);
+      const currentSpeed = Math.sqrt(player.velocityX ** 2 + player.velocityY ** 2 + player.velocityZ ** 2);
       player.velocityX = forward.x * currentSpeed;
       player.velocityY = forward.y * currentSpeed;
       player.velocityZ = forward.z * currentSpeed;
@@ -996,7 +996,7 @@ export class DogfightRoom extends Room<RoomState> {
       player.velocityY += effectiveLift * deltaTime;
 
       // 4. Speed Clamps
-      const realSpeed = Math.sqrt(player.velocityX**2 + player.velocityY**2 + player.velocityZ**2);
+      const realSpeed = Math.sqrt(player.velocityX ** 2 + player.velocityY ** 2 + player.velocityZ ** 2);
 
       // Allow overspeed in dives (gravity), but drag brings it back
       const ABSOLUTE_MAX = 120; // Dive limit
@@ -1081,6 +1081,44 @@ export class DogfightRoom extends Room<RoomState> {
         }
       }
     });
+
+    // ====================
+    // PLANE-TO-PLANE COLLISIONS
+    // ====================
+    // Convert map to array for pair-wise checks
+    const players = Array.from(this.state.players.values());
+    const COLLISION_RADIUS = 3; // 3m radius (6m diameter)
+    const HIT_DISTANCE_SQ = (COLLISION_RADIUS * 2) ** 2; // (3 + 3)^2 = 36
+
+    for (let i = 0; i < players.length; i++) {
+      const p1 = players[i];
+      if (!p1.alive || p1.invulnerable) continue;
+
+      for (let j = i + 1; j < players.length; j++) {
+        const p2 = players[j];
+        if (!p2.alive || p2.invulnerable) continue;
+
+        const dx = p1.posX - p2.posX;
+        const dy = p1.posY - p2.posY;
+        const dz = p1.posZ - p2.posZ;
+        const distSq = dx * dx + dy * dy + dz * dz;
+
+        if (distSq < HIT_DISTANCE_SQ) {
+          // CRASH!
+          p1.alive = false;
+          p2.alive = false;
+
+          console.log(`💥 MIDAIR CRASH: ${p1.name} collided with ${p2.name}!`);
+
+          // If it was a human involved, log it with more emphasis
+          if (!p1.isBot || !p2.isBot) {
+            this.broadcast("message", `💥 MIDAIR CRASH: ${p1.name} slammed into ${p2.name}!`);
+          }
+        }
+      }
+    }
+
+    this.updateAliveCounts();
 
     // Update projectiles
     const PROJECTILE_SPEED = 200; // m/s (fast bullets)
@@ -1230,7 +1268,7 @@ export class DogfightRoom extends Room<RoomState> {
 
     // Determine winner
     const winner = this.state.scoreRed > this.state.scoreBlue ? 'RED' :
-                   this.state.scoreBlue > this.state.scoreRed ? 'BLUE' : 'TIE';
+      this.state.scoreBlue > this.state.scoreRed ? 'BLUE' : 'TIE';
     console.log(`   Winner: ${winner}`);
 
     this.state.phase = GamePhase.RESULTS;
