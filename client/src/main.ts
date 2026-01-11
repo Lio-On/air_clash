@@ -793,6 +793,9 @@ class Game {
   private createScene(): Scene {
     const scene = new Scene(this.engine);
 
+    // IMPORTANT: Disable environment reflections/IBL to prevent blue sky reflections on terrain
+    scene.environmentTexture = null;
+
     // Sky background - light blue sky
     scene.clearColor = new Color4(0.53, 0.81, 0.98, 1.0);
 
@@ -808,24 +811,27 @@ class Game {
     // Ambient light - soft overall illumination
     const ambientLight = new HemisphericLight('ambientLight', new Vector3(0, 1, 0), scene);
     ambientLight.intensity = 0.5;
-    ambientLight.diffuse = new Color3(0.9, 0.9, 1.0); // Slightly blue tint
-    ambientLight.groundColor = new Color3(0.3, 0.3, 0.3); // Darker ground reflection
+    ambientLight.diffuse = new Color3(1.0, 1.0, 0.95); // Warm neutral (removed blue tint)
+    ambientLight.groundColor = new Color3(0.4, 0.35, 0.3); // Warm ground reflection
 
     // Directional light - main sun light
     const sunLight = new DirectionalLight('sunLight', new Vector3(-1, -2, -1), scene);
     sunLight.intensity = 0.8;
     sunLight.diffuse = new Color3(1.0, 0.95, 0.8); // Warm sunlight
-    sunLight.specular = new Color3(1.0, 1.0, 0.9);
+    sunLight.specular = new Color3(1.0, 1.0, 0.9); // Restore specular highlights
 
     // Procedural terrain mesh using shared terrain function
     const terrainSize = 2000; // 2000m x 2000m terrain
     const terrainSubdivisions = 128; // High resolution for smooth mountains
     const terrain = this.createProceduralTerrain(scene, terrainSize, terrainSubdivisions);
 
-    // Terrain material - height-based coloring
+    // Terrain material - StandardMaterial with zero reflections
     const terrainMat = new StandardMaterial('terrainMat', scene);
-    terrainMat.diffuseColor = new Color3(0.25, 0.5, 0.2); // Base terrain green
-    terrainMat.specularColor = new Color3(0.1, 0.1, 0.1); // Low specularity for terrain
+    terrainMat.diffuseColor = new Color3(0.25, 0.5, 0.2); // Terrain green
+    terrainMat.specularColor = new Color3(0, 0, 0); // Completely black = zero specular reflection
+    terrainMat.specularPower = 1; // Minimum power (rough surface)
+    terrainMat.reflectionTexture = null; // Explicitly no reflection texture
+    terrainMat.emissiveColor = new Color3(0, 0, 0); // No self-illumination
     terrain.material = terrainMat;
 
     // Ocean plane - water around the island
@@ -833,14 +839,18 @@ class Game {
       width: 4000,  // Larger than island
       height: 4000
     }, scene);
-    ocean.position.y = -5; // Below the raised island terrain
+    ocean.position.y = -10; // Below terrain
 
     // Ocean material - blue water
     const oceanMat = new StandardMaterial('oceanMat', scene);
     oceanMat.diffuseColor = new Color3(0.1, 0.3, 0.6); // Deep blue water
     oceanMat.specularColor = new Color3(0.3, 0.3, 0.4); // Some water reflection
-    oceanMat.alpha = 0.9; // Slightly transparent (reduced from 0.7)
+    oceanMat.alpha = 1.0; // Completely opaque
     ocean.material = oceanMat;
+
+    // Render ocean before terrain to prevent z-fighting
+    ocean.renderingGroupId = 0;
+    terrain.renderingGroupId = 1;
 
     // Scatter trees on terrain
     this.scatterTrees(scene, 150); // Add 150 trees
