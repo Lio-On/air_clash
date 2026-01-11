@@ -942,18 +942,16 @@ export class DogfightRoom extends Room<RoomState> {
       // Clamp pitch to prevent loop-de-loops
       player.rotX = Math.max(-Math.PI / 3, Math.min(Math.PI / 3, player.rotX));
 
-      // ===== AERODYNAMICS & FORCES (Variable Speed) =====
-      // 1. Calculate Forward Vector
+      // ===== AERODYNAMICS & FORCES =====
+      // 1. Calculate Forward Vector (CORRECTED)
       const forward = {
         x: -Math.sin(player.rotY) * Math.cos(player.rotX),
-        y: Math.sin(player.rotX),
+        y: Math.sin(player.rotX), // Positive = Pitch down goes down
         z: -Math.cos(player.rotY) * Math.cos(player.rotX)
       };
 
-      // 2. Kill Lateral Drift (Redirect momentum forward)
+      // 2. Kill Lateral Drift
       const currentSpeed = Math.sqrt(player.velocityX**2 + player.velocityY**2 + player.velocityZ**2);
-
-      // Redirect all speed to forward direction
       player.velocityX = forward.x * currentSpeed;
       player.velocityY = forward.y * currentSpeed;
       player.velocityZ = forward.z * currentSpeed;
@@ -965,29 +963,44 @@ export class DogfightRoom extends Room<RoomState> {
       player.velocityY += forward.y * FORWARD_ACCELERATION * deltaTime;
       player.velocityZ += forward.z * FORWARD_ACCELERATION * deltaTime;
 
-      // Gravity (Always pulls down)
+      // Gravity (Always pulls down -9.8)
       player.velocityY += GRAVITY * deltaTime;
 
-      // Drag (Air Resistance) - Soft cap that fights gravity
-      const DRAG_FACTOR = 0.5;
+      // Drag Logic (Speed Dynamics)
+      // Base Drag: Increases with Speed
+      let dragFactor = 0.3;
+
+      // Induced Drag: Turning (Banking) causes more drag
+      // 60 degrees bank = +50% drag. Bleeds speed in turns.
+      dragFactor += Math.abs(player.rotZ) * 0.5;
+
       if (currentSpeed > 0) {
-        const drag = currentSpeed * DRAG_FACTOR * deltaTime;
+        const drag = currentSpeed * dragFactor * deltaTime;
         player.velocityX -= player.velocityX * (drag / currentSpeed);
         player.velocityY -= player.velocityY * (drag / currentSpeed);
         player.velocityZ -= player.velocityZ * (drag / currentSpeed);
       }
 
-      // Lift (Counter-Gravity)
-      // Only effective when wings are level (cos(rotZ))
-      const liftForce = currentSpeed * 0.25; // Stronger lift to hold 70 speed
-      const bankFactor = Math.cos(player.rotZ);
-      player.velocityY += liftForce * bankFactor * deltaTime;
+      // Smart Lift (Counter-Gravity)
+      // Only works if wings are level AND pitch is flat
+      // Diving (rotX=90) -> No Lift. Banking (rotZ=90) -> No Lift.
+      const liftPower = currentSpeed * 0.20;
+      const pitchFactor = Math.cos(player.rotX); // 0 at 90 degrees
+      const bankFactor = Math.cos(player.rotZ);  // 0 at 90 degrees
 
-      // 4. Hard Speed Clamps
+      // Lift always acts in the "Up" direction relative to the horizon
+      // (Simplified: Just adds +Y velocity to counter gravity)
+      const effectiveLift = liftPower * Math.abs(pitchFactor) * Math.abs(bankFactor);
+      player.velocityY += effectiveLift * deltaTime;
+
+      // 4. Speed Clamps
       const realSpeed = Math.sqrt(player.velocityX**2 + player.velocityY**2 + player.velocityZ**2);
 
-      if (realSpeed > MAX_SPEED) {
-        const scale = MAX_SPEED / realSpeed;
+      // Allow overspeed in dives (gravity), but drag brings it back
+      const ABSOLUTE_MAX = 120; // Dive limit
+
+      if (realSpeed > ABSOLUTE_MAX) {
+        const scale = ABSOLUTE_MAX / realSpeed;
         player.velocityX *= scale;
         player.velocityY *= scale;
         player.velocityZ *= scale;
