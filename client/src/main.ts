@@ -426,8 +426,8 @@ class Game {
     this.ui.showScreen('match');
     this.ui.hideCountdown();
 
-    // Switch to game camera (FollowCamera)
-    if (this.scene.activeCamera !== this.camera) {
+    // Switch to game camera (FollowCamera) only if we're coming from the Lobby Camera
+    if (this.scene.activeCamera === this.lobbyCamera) {
       this.scene.activeCamera = this.camera;
       console.log('📷 Match started - Switching to FollowCamera');
     }
