@@ -832,6 +832,7 @@ class Game {
     terrainMat.specularPower = 1; // Minimum power (rough surface)
     terrainMat.reflectionTexture = null; // Explicitly no reflection texture
     terrainMat.emissiveColor = new Color3(0, 0, 0); // No self-illumination
+    // terrainMat.backFaceCulling = false; // Reverted: Normals fixed
     terrain.material = terrainMat;
 
     // Ocean plane - water around the island
@@ -839,7 +840,7 @@ class Game {
       width: 4000,  // Larger than island
       height: 4000
     }, scene);
-    ocean.position.y = -10; // Below terrain
+    ocean.position.y = 11; // 11m high to intersect island slopes and hide square edges
 
     // Ocean material - blue water
     const oceanMat = new StandardMaterial('oceanMat', scene);
@@ -849,11 +850,11 @@ class Game {
     ocean.material = oceanMat;
 
     // Render ocean before terrain to prevent z-fighting
-    ocean.renderingGroupId = 0;
-    terrain.renderingGroupId = 1;
+    // ocean.renderingGroupId = 0;
+    // terrain.renderingGroupId = 1;
 
     // Scatter trees on terrain
-    this.scatterTrees(scene, 150); // Add 150 trees
+    this.scatterTrees(scene, 400); // Add 400 trees (Increased for larger mountains)
 
     // Cloud Wall - visual indicator of soft boundary at 1200m radius
     const cloudWall = MeshBuilder.CreateCylinder('cloudWall', {
@@ -908,9 +909,9 @@ class Game {
         const bottomLeft = (z + 1) * verticesPerSide + x;
         const bottomRight = bottomLeft + 1;
 
-        // Two triangles per quad
-        indices.push(topLeft, bottomLeft, topRight);
-        indices.push(topRight, bottomLeft, bottomRight);
+        // Two triangles per quad - FLIPPED INDICES to fix winding order (Counter-Clockwise)
+        indices.push(topLeft, topRight, bottomLeft);
+        indices.push(topRight, bottomRight, bottomLeft);
       }
     }
 
@@ -957,7 +958,7 @@ class Game {
 
     // Tree material - brown trunk, green foliage
     const treeMat = new StandardMaterial('treeMat', scene);
-    treeMat.diffuseColor = new Color3(0.15, 0.4, 0.1); // Dark green
+    treeMat.diffuseColor = new Color3(0.05, 0.2, 0.05); // Much darker green
     treeMat.specularColor = new Color3(0.05, 0.05, 0.05); // Low specularity
     tree.material = treeMat;
 
@@ -972,7 +973,7 @@ class Game {
     const treeTemplate = this.createTreeMesh(scene);
     treeTemplate.isVisible = false; // Hide the template
 
-    const SNOW_LEVEL = 80; // Don't place trees above snow line (reduced from 600)
+    const SNOW_LEVEL = 220; // Allow trees up to 220m (Volcano is 250m)
 
     for (let i = 0; i < count; i++) {
       // Random position within terrain bounds (stay away from spawn at 1100m)
