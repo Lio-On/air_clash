@@ -8,6 +8,7 @@ class Game {
   private engine: Engine;
   private scene: Scene;
   private camera: FollowCamera;
+  private lobbyCamera: FreeCamera;
   private deathCamera: ArcRotateCamera | null = null;
   private isPlayerDead: boolean = false;
   private ui: UIManager;
@@ -373,9 +374,11 @@ class Game {
 
     // Reset death state for new match
     this.isPlayerDead = false;
-    if (this.scene.activeCamera === this.deathCamera) {
-      this.scene.activeCamera = this.camera;
-      console.log('🔄 Switched back to follow camera for new match');
+
+    // Ensure we are using the lobby camera for the countdown view
+    if (this.scene.activeCamera !== this.lobbyCamera) {
+      this.scene.activeCamera = this.lobbyCamera;
+      console.log('� Switched to lobby camera for countdown');
     }
 
     // Clear any existing countdown
@@ -422,6 +425,12 @@ class Game {
     // Make sure we're showing the match HUD
     this.ui.showScreen('match');
     this.ui.hideCountdown();
+
+    // Switch to game camera (FollowCamera)
+    if (this.scene.activeCamera !== this.camera) {
+      this.scene.activeCamera = this.camera;
+      console.log('📷 Match started - Switching to FollowCamera');
+    }
 
     // Get local player's state
     const localPlayer = state.players.get(this.sessionId);
@@ -799,8 +808,14 @@ class Game {
     // Sky background - light blue sky
     scene.clearColor = new Color4(0.53, 0.81, 0.98, 1.0);
 
-    // Camera - follow camera for third-person view (scaled for 10x altitude)
-    this.camera = new FollowCamera('followCamera', new Vector3(0, 1500, -3000), scene);
+    // 1. Lobby Camera - Static view for lobby and countdown
+    this.lobbyCamera = new FreeCamera('lobbyCamera', new Vector3(0, 700, -1800), scene);
+    this.lobbyCamera.setTarget(new Vector3(0, 200, 0)); // Look at the volcano/center
+    // Default to lobby camera initially
+    scene.activeCamera = this.lobbyCamera;
+
+    // 2. Game Camera - Follow camera for third-person view (will be activated on match start)
+    this.camera = new FollowCamera('camera1', new Vector3(0, 500, -800), scene);
     this.camera.radius = 80;           // Distance from target (80 meters behind, scaled 10x)
     this.camera.heightOffset = 30;     // Height above target (30 meters up, scaled 3x)
     this.camera.rotationOffset = 0;    // Camera behind plane, looking forward
