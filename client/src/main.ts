@@ -428,7 +428,8 @@ class Game {
     this.ui.hideCountdown();
 
     // Switch to game camera (FollowCamera) only if we're coming from the Lobby Camera
-    if (this.scene.activeCamera === this.lobbyCamera) {
+    const switchedCamera = this.scene.activeCamera === this.lobbyCamera;
+    if (switchedCamera) {
       this.scene.activeCamera = this.camera;
       console.log('📷 Match started - Switching to FollowCamera');
     }
@@ -442,6 +443,30 @@ class Game {
         localPlayer.posY,
         localPlayer.ammo
       );
+
+      // FIX: Snap camera instantly to the correct follow position
+      if (switchedCamera) {
+        console.log('📷 Snapping camera to initial follow position (Rotation Aware)');
+
+        // Calculate position behind the plane based on its rotation
+        // Forward vector (horizontal) is: x = -sin(rotY), z = -cos(rotY)
+        // Backward vector is: x = sin(rotY), z = cos(rotY)
+        const radius = 80;
+        const heightOffset = 30;
+
+        const offsetX = Math.sin(localPlayer.rotY) * radius;
+        const offsetZ = Math.cos(localPlayer.rotY) * radius;
+
+        this.camera.position.set(
+          localPlayer.posX + offsetX,
+          localPlayer.posY + heightOffset,
+          localPlayer.posZ + offsetZ
+        );
+
+        // Also force the camera rotation to align immediately
+        // The FollowCamera will update this next frame, but setting it now helps prevent 1-frame glitches
+        this.camera.rotationOffset = 0; // Ensure offset is reset
+      }
     }
   }
 
@@ -909,6 +934,14 @@ class Game {
     // Sky background - light blue sky
     scene.clearColor = new Color4(0.53, 0.81, 0.98, 1.0);
 
+    // ===== ATMOSPHERIC DEPTH: Distance Fog =====
+    // Adds subtle depth by fading distant objects toward sky color
+    scene.fogEnabled = true;
+    scene.fogMode = Scene.FOGMODE_LINEAR; // Linear fog for predictable fade
+    scene.fogColor = new Color3(0.53, 0.81, 0.98); // Match sky color
+    scene.fogStart = 1000; // Fog starts at 1000m (pushed further back)
+    scene.fogEnd = 1800;   // Full fog at 1800m (beyond map boundary)
+
     // 1. Lobby Camera - Static view for lobby and countdown
     this.lobbyCamera = new FreeCamera('lobbyCamera', new Vector3(0, 700, -1800), scene);
     this.lobbyCamera.setTarget(new Vector3(0, 200, 0)); // Look at the volcano/center
@@ -924,17 +957,18 @@ class Game {
     this.camera.maxCameraSpeed = 20;   // Maximum camera movement speed
     // Note: Do NOT attachControl - we want camera to follow plane automatically without manual control
 
-    // Ambient light - soft overall illumination
+    // ===== SUN LIGHTING: Enhanced Directional Light =====
+    // Ambient light - reduced for better contrast
     const ambientLight = new HemisphericLight('ambientLight', new Vector3(0, 1, 0), scene);
-    ambientLight.intensity = 0.5;
-    ambientLight.diffuse = new Color3(1.0, 1.0, 0.95); // Warm neutral (removed blue tint)
-    ambientLight.groundColor = new Color3(0.4, 0.35, 0.3); // Warm ground reflection
+    ambientLight.intensity = 0.4; // Reduced from 0.5 for stronger sun contrast
+    ambientLight.diffuse = new Color3(0.95, 0.95, 1.0); // Cooler ambient (sky tint)
+    ambientLight.groundColor = new Color3(0.3, 0.35, 0.25); // Subtle green ground bounce
 
-    // Directional light - main sun light
-    const sunLight = new DirectionalLight('sunLight', new Vector3(-1, -2, -1), scene);
-    sunLight.intensity = 0.8;
-    sunLight.diffuse = new Color3(1.0, 0.95, 0.8); // Warm sunlight
-    sunLight.specular = new Color3(1.0, 1.0, 0.9); // Restore specular highlights
+    // Directional sun light - stronger and from a clearer angle
+    const sunLight = new DirectionalLight('sunLight', new Vector3(-1, -1.8, -0.5), scene);
+    sunLight.intensity = 1.2; // Increased from 0.8 for better slope definition
+    sunLight.diffuse = new Color3(1.0, 0.98, 0.9); // Bright warm sunlight
+    sunLight.specular = new Color3(0.8, 0.8, 0.7); // Subtle specular (not too shiny)
 
     // Procedural terrain mesh using shared terrain function
     const terrainSize = 2000; // 2000m x 2000m terrain
