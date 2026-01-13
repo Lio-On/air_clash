@@ -897,6 +897,52 @@ export class DogfightRoom extends Room<RoomState> {
       // Skip dead players
       if (!player.alive) return;
 
+      // ===== CRASH PHYSICS =====
+      // If crashing, override normal physics with crash behavior
+      if (player.isCrashing) {
+        // Crash constants
+        const CRASH_GRAVITY = -20;          // Strong downward pull
+        const CRASH_SPIN_RATE = Math.PI * 2; // 1 full rotation per second (moderate)
+        const CRASH_PITCH_TARGET = -Math.PI / 3; // ~-60° nose down (negative = down)
+
+        // Force pitch down toward target (nose dive)
+        const pitchDiff = CRASH_PITCH_TARGET - player.rotX;
+        player.rotX += pitchDiff * 2.0 * deltaTime; // Fast pitch down
+
+        // Constant spin around roll axis (death spiral)
+        player.rotZ += CRASH_SPIN_RATE * deltaTime;
+
+        // Apply strong gravity
+        player.velocityY += CRASH_GRAVITY * deltaTime;
+
+        // Dampen horizontal velocity (air resistance during crash)
+        player.velocityX *= Math.pow(0.98, deltaTime * 60); // Exponential decay
+        player.velocityZ *= Math.pow(0.98, deltaTime * 60);
+
+        // Update position
+        player.posX += player.velocityX * deltaTime;
+        player.posY += player.velocityY * deltaTime;
+        player.posZ += player.velocityZ * deltaTime;
+
+        // Check for ground impact during crash
+        const terrainHeight = getTerrainHeight(player.posX, player.posZ);
+        const collisionHeight = Math.max(terrainHeight, TERRAIN_CONFIG.WATER_LEVEL);
+
+        if (player.posY <= collisionHeight) {
+          // Final impact - plane explodes
+          player.posY = collisionHeight;
+          player.alive = false;
+          player.isCrashing = false;
+
+          console.log(`💥💥 ${player.name} hit the ground and exploded!`);
+
+          // Update alive counts
+          this.updateAliveCounts();
+        }
+
+        return; // Skip normal physics for crashing planes
+      }
+
       // Get player input (bots generate AI input, humans use their input)
       let input;
       if (player.isBot) {
@@ -1037,7 +1083,15 @@ export class DogfightRoom extends Room<RoomState> {
           console.log(`💥 ${player.name} crashed into the water!`);
         }
 
-        player.alive = false;
+        // If already crashing, this is the final impact - set alive=false
+        // If not crashing yet, trigger crash sequence
+        if (player.isCrashing) {
+          player.alive = false;
+          player.isCrashing = false;
+        } else {
+          player.isCrashing = true;
+          player.invulnerable = true; // Invulnerable during crash
+        }
 
         // Update alive counts for team tracking
         this.updateAliveCounts();
@@ -1118,9 +1172,11 @@ export class DogfightRoom extends Room<RoomState> {
         const distSq = dx * dx + dy * dy + dz * dz;
 
         if (distSq < HIT_DISTANCE_SQ) {
-          // CRASH!
-          p1.alive = false;
-          p2.alive = false;
+          // CRASH! Trigger crash sequence for both planes
+          p1.isCrashing = true;
+          p1.invulnerable = true;
+          p2.isCrashing = true;
+          p2.invulnerable = true;
 
           console.log(`💥 MIDAIR CRASH: ${p1.name} collided with ${p2.name}!`);
 
@@ -1171,8 +1227,9 @@ export class DogfightRoom extends Room<RoomState> {
         const hitRadius = 10; // 10 meters
 
         if (distSq < hitRadius * hitRadius) {
-          // Hit! Kill the player
-          player.alive = false;
+          // Hit! Trigger crash sequence
+          player.isCrashing = true;
+          player.invulnerable = true; // Invulnerable during crash
           projectilesToRemove.push(id);
 
           // Get the killer and award kill

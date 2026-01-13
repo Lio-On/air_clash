@@ -1,4 +1,4 @@
-import { Engine, Scene, HemisphericLight, DirectionalLight, Vector3, MeshBuilder, FreeCamera, FollowCamera, ArcRotateCamera, StandardMaterial, Color3, Color4, Mesh, Scalar, VertexData } from '@babylonjs/core';
+import { Engine, Scene, HemisphericLight, DirectionalLight, Vector3, MeshBuilder, FreeCamera, FollowCamera, ArcRotateCamera, StandardMaterial, Color3, Color4, Mesh, Scalar, VertexData, ParticleSystem, Texture } from '@babylonjs/core';
 import { CONFIG, Team, GamePhase, getTerrainHeight, TERRAIN_CONFIG } from '@air-clash/common';
 import { clientConfig } from './config';
 import { UIManager } from './UIManager';
@@ -20,6 +20,7 @@ class Game {
   private countdownInterval: any = null;
   private playerMeshes: Map<string, Mesh> = new Map();
   private projectileMeshes: Map<string, Mesh> = new Map();
+  private smokeSystems: Map<string, ParticleSystem> = new Map(); // Crash smoke effects
   private lastMeshUpdateLog: number = 0;
 
   // Input state
@@ -561,7 +562,68 @@ class Game {
     wings.material = material;
     tail.material = material;
 
+    // Store team in metadata for updates
+    airplane.metadata = { team: team };
+
     return airplane;
+  }
+
+  /**
+   * Create smoke particle effect for crashing plane
+   */
+  private createSmokeEffect(planeMesh: Mesh): ParticleSystem {
+    // Reduce capacity as we emit fewer particles
+    const smokeSystem = new ParticleSystem('smoke', 500, this.scene);
+
+    // Load the smoke texture from public folder
+    smokeSystem.particleTexture = new Texture("/smoke.png", this.scene);
+
+    // Emit from the plane's position (center of mesh)
+    smokeSystem.emitter = planeMesh;
+
+    // Emit from the tail/back of the plane
+    // Plane is approx 5 units long (Z-axis). Back is approx Z = +2.5 (since forward is -Z)
+    smokeSystem.minEmitBox = new Vector3(-0.2, 0, 2.0);
+    smokeSystem.maxEmitBox = new Vector3(0.2, 0.5, 3.0);
+
+    // Emission rate - Distinct puffs one after another
+    // Plane moves at ~50-80 units/sec. 20 puffs/sec = ~2.5-4 units separation.
+    smokeSystem.emitRate = 20;
+
+    // Particle appearance - Sphere-like puffs
+    // Start smaller, grow larger
+    smokeSystem.minSize = 2;
+    smokeSystem.maxSize = 2; // Uniform start size
+
+    // Size gradient: Start at 0.5x, grow to 2.5x over lifetime
+    smokeSystem.addSizeGradient(0, 0.5);
+    smokeSystem.addSizeGradient(1.0, 2.5);
+
+    // Lifetime - "a couple of seconds"
+    smokeSystem.minLifeTime = 2.0;
+    smokeSystem.maxLifeTime = 3.0;
+
+    // Grey tones (light to dark grey)
+    smokeSystem.color1 = new Color4(0.6, 0.6, 0.6, 1.0); // Light grey
+    smokeSystem.color2 = new Color4(0.4, 0.4, 0.4, 1.0); // Darker grey
+    smokeSystem.colorDead = new Color4(0.2, 0.2, 0.2, 0.0); // Fade to black/transparent
+
+    // Emission direction - Slight drift up and back, but mostly leaving a trail
+    smokeSystem.direction1 = new Vector3(-0.5, 0.5, 1);
+    smokeSystem.direction2 = new Vector3(0.5, 1.5, 1);
+
+    // Speed - Very slow emission power, let the plane leave them behind
+    smokeSystem.minEmitPower = 0.1;
+    smokeSystem.maxEmitPower = 0.5;
+    smokeSystem.updateSpeed = 0.015;
+
+    // Gravity - Smoke slowly rises
+    smokeSystem.gravity = new Vector3(0, 1.0, 0);
+
+    // Start the system
+    smokeSystem.start();
+
+    return smokeSystem;
   }
 
   /**
@@ -725,15 +787,46 @@ class Game {
         mesh.rotation.z = targetRot.z;
       }
 
-      // Hide dead players
+      // Check for team change and update color
+      if (mesh.metadata && mesh.metadata.team !== player.team) {
+        const material = this.scene.getMaterialByName(`airplane-mat-${sessionId}`) as StandardMaterial;
+        if (material) {
+          if (player.team === Team.RED) {
+            material.diffuseColor = new Color3(0.86, 0.21, 0.27); // Red
+          } else {
+            material.diffuseColor = new Color3(0.05, 0.43, 0.99); // Blue
+          }
+          mesh.metadata.team = player.team;
+          console.log(`🎨 Updated team color for ${player.name} to ${player.team}`);
+        }
+      }
+
+      // Handle crash smoke effects
+      if (player.isCrashing && !this.smokeSystems.has(sessionId)) {
+        // Create smoke particle system for crashing plane
+        const smokeSystem = this.createSmokeEffect(mesh);
+        this.smokeSystems.set(sessionId, smokeSystem);
+        console.log(`💨 Created smoke effect for crashing ${player.name}`);
+      }
+
+      // Hide dead players and cleanup smoke
       if (!player.alive) {
         mesh.setEnabled(false);
+
+        // Dispose smoke system if it exists
+        const smokeSystem = this.smokeSystems.get(sessionId);
+        if (smokeSystem) {
+          smokeSystem.stop();
+          smokeSystem.dispose();
+          this.smokeSystems.delete(sessionId);
+          console.log(`🧹 Cleaned up smoke effect for ${player.name}`);
+        }
       } else {
         mesh.setEnabled(true);
 
         // Visual indicator for spawn protection
-        if (player.invulnerable) {
-          // Make mesh slightly transparent during invulnerability
+        if (player.invulnerable && !player.isCrashing) {
+          // Make mesh slightly transparent during invulnerability (but not during crash)
           const material = mesh.getChildMeshes()[0].material as StandardMaterial;
           if (material) {
             material.alpha = 0.7;
@@ -753,6 +846,14 @@ class Game {
         console.log(`🗑️  Removing mesh for ${sessionId}`);
         mesh.dispose();
         this.playerMeshes.delete(sessionId);
+
+        // Also cleanup smoke system if exists
+        const smokeSystem = this.smokeSystems.get(sessionId);
+        if (smokeSystem) {
+          smokeSystem.stop();
+          smokeSystem.dispose();
+          this.smokeSystems.delete(sessionId);
+        }
       }
     });
   }

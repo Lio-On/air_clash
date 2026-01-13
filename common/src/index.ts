@@ -28,6 +28,7 @@ export interface PlayerState {
   ready: boolean;
   alive: boolean;
   isBot: boolean;
+  isCrashing: boolean;
 }
 
 /**

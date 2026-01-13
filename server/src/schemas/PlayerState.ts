@@ -23,6 +23,9 @@ export class PlayerState extends Schema {
   @type('boolean')
   isBot: boolean = false;
 
+  @type('boolean')
+  isCrashing: boolean = false;
+
   // Position (3D coordinates)
   @type('number')
   posX: number = 0;
