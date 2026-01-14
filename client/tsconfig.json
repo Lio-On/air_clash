@@ -27,9 +27,11 @@
       "@air-clash/common": [
         "../../common/src/index.ts"
       ]
-    }
+    },
+    "baseUrl": "."
   },
   "include": [
-    "src"
+    "src",
+    "../../common/src"
   ]
 }

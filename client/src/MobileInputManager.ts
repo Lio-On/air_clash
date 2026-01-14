@@ -1,10 +1,10 @@
-import nipplejs, { JoystickManager, JoystickOutputData } from 'nipplejs';
+import nipplejs from 'nipplejs';
 
 /**
  * Manages mobile touch controls (virtual joystick + fire button)
  */
 export class MobileInputManager {
-  private joystickManager: JoystickManager | null = null;
+  private joystickManager: any = null;
   private controlsVisible: boolean = false;
   private isTouchDevice: boolean = false;
 
@@ -215,7 +215,7 @@ export class MobileInputManager {
     });
 
     // Handle joystick move
-    this.joystickManager.on('move', (_evt, data: JoystickOutputData) => {
+    this.joystickManager.on('move', (_evt: any, data: any) => {
       if (!data.vector) return;
 
       // Extract normalized vector (-1 to +1)
