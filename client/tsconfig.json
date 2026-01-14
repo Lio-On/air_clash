@@ -25,13 +25,13 @@
     ],
     "paths": {
       "@air-clash/common": [
-        "../../common/src/index.ts"
+        "../common/src/index.ts"
       ]
     },
     "baseUrl": "."
   },
   "include": [
     "src",
-    "../../common/src"
+    "../common/src"
   ]
 }
