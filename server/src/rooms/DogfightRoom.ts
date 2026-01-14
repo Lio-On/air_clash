@@ -155,11 +155,20 @@ export class DogfightRoom extends Room<RoomState> {
       this.checkAndFillBots();
     });
 
-    // Player input (flight controls)
-    this.onMessage('playerInput', (client, message: { up: boolean; down: boolean; left: boolean; right: boolean; shoot: boolean }) => {
+    // Player input (flight controls) - supports both analog and boolean inputs
+    this.onMessage('playerInput', (client, message: {
+      up: boolean;
+      down: boolean;
+      left: boolean;
+      right: boolean;
+      shoot: boolean;
+      pitch?: number;  // Optional analog input -1 to +1
+      roll?: number;   // Optional analog input -1 to +1
+    }) => {
       // Debug: Log first input received per client
       if (!(client as any)._hasLoggedInput) {
-        console.log(`🎮 First playerInput received from ${client.sessionId}`);
+        console.log(`🎮 First playerInput received from ${client.sessionId}`,
+          message.pitch !== undefined ? '(analog)' : '(boolean)');
         (client as any)._hasLoggedInput = true;
       }
 
@@ -966,26 +975,44 @@ export class DogfightRoom extends Room<RoomState> {
         }
       }
 
-      // Pitch control (up/down)
-      // Negative rotX = nose up, positive rotX = nose down (standard 3D)
-      if (input.up) {
-        player.rotX -= PITCH_SPEED * deltaTime;  // Nose up
-      }
-      if (input.down) {
-        player.rotX += PITCH_SPEED * deltaTime;  // Nose down
-      }
+      // ===== ANALOG INPUT SUPPORT =====
+      // Prefer analog input (pitch/roll) when available, fallback to boolean
+      const hasAnalogInput = input.pitch !== undefined && input.roll !== undefined;
 
-      // BANK-TO-TURN: Left/Right controls Roll, which induces Yaw
-      // Roll (Banking) - primary control for turning
-      let targetRoll = 0;
-      if (input.left) {
-        targetRoll = -MAX_ROLL;  // Bank left (negative roll)
-      } else if (input.right) {
-        targetRoll = MAX_ROLL;   // Bank right (positive roll)
+      if (hasAnalogInput) {
+        // ANALOG MODE: Smooth proportional control
+        const pitchInput = input.pitch || 0;  // -1 to +1
+        const rollInput = input.roll || 0;    // -1 to +1
+
+        // Pitch control (up/down) - proportional to analog value
+        // Negative rotX = nose up, positive rotX = nose down
+        player.rotX += pitchInput * PITCH_SPEED * deltaTime;
+
+        // Roll (Banking) - proportional to analog value
+        const targetRoll = rollInput * MAX_ROLL;
+        const rollDiff = targetRoll - player.rotZ;
+        player.rotZ += rollDiff * ROLL_SPEED * deltaTime;
+      } else {
+        // BOOLEAN MODE: Digital keyboard controls (legacy)
+        // Pitch control (up/down)
+        if (input.up) {
+          player.rotX -= PITCH_SPEED * deltaTime;  // Nose up
+        }
+        if (input.down) {
+          player.rotX += PITCH_SPEED * deltaTime;  // Nose down
+        }
+
+        // Roll (Banking) - primary control for turning
+        let targetRoll = 0;
+        if (input.left) {
+          targetRoll = -MAX_ROLL;  // Bank left (negative roll)
+        } else if (input.right) {
+          targetRoll = MAX_ROLL;   // Bank right (positive roll)
+        }
+        // Smoothly interpolate to target roll (auto-levels when no input)
+        const rollDiff = targetRoll - player.rotZ;
+        player.rotZ += rollDiff * ROLL_SPEED * deltaTime;
       }
-      // Smoothly interpolate to target roll (auto-levels when no input)
-      const rollDiff = targetRoll - player.rotZ;
-      player.rotZ += rollDiff * ROLL_SPEED * deltaTime;
 
       // Induced Yaw from Banking (this is how planes actually turn)
       // Banking right (positive rotZ) -> turn right (positive rotY)

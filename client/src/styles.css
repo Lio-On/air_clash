@@ -12,6 +12,9 @@ body {
   padding: 0;
   overflow: hidden;
   background: #000;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
 }
 
 #renderCanvas {
@@ -394,13 +397,31 @@ body {
     grid-template-columns: 1fr;
   }
 
+  /* Mobile HUD: More compact, higher/inward positioning, mild transparency */
+  .hud-top-left {
+    top: 30px;
+    left: 30px;
+  }
+
+  .hud-top-right {
+    top: 30px;
+    right: 30px;
+  }
+
   .hud-stat {
-    min-width: 120px;
-    padding: 8px 16px;
+    min-width: 100px;
+    padding: 6px 12px;
+    background: rgba(0, 0, 0, 0.5); /* More transparent */
+    margin-bottom: 8px;
+  }
+
+  .hud-label {
+    font-size: 10px;
+    margin-bottom: 2px;
   }
 
   .hud-value {
-    font-size: 20px;
+    font-size: 18px;
   }
 
   .countdown-display {

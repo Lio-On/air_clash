@@ -2,6 +2,7 @@ import { Engine, Scene, HemisphericLight, DirectionalLight, Vector3, MeshBuilder
 import { CONFIG, Team, GamePhase, getTerrainHeight, TERRAIN_CONFIG } from '@air-clash/common';
 import { clientConfig } from './config';
 import { UIManager } from './UIManager';
+import { MobileInputManager } from './MobileInputManager';
 import { Client, Room } from 'colyseus.js';
 
 class Game {
@@ -12,6 +13,7 @@ class Game {
   private deathCamera: ArcRotateCamera | null = null;
   private isPlayerDead: boolean = false;
   private ui: UIManager;
+  private mobileInput: MobileInputManager;
   private client: Client;
   private room: Room | null = null;
   private sessionId: string = '';
@@ -23,14 +25,21 @@ class Game {
   private smokeSystems: Map<string, ParticleSystem> = new Map(); // Crash smoke effects
   private lastMeshUpdateLog: number = 0;
 
-  // Input state
+  // Input state (legacy boolean + new analog)
   private inputState = {
+    // Legacy boolean inputs (for keyboard)
     up: false,      // W or Arrow Up
     down: false,    // S or Arrow Down
     left: false,    // A or Arrow Left
     right: false,   // D or Arrow Right
     shoot: false,   // Space
+
+    // New analog inputs (for mobile/gamepad)
+    pitch: 0,       // -1 to +1
+    roll: 0,        // -1 to +1
   };
+
+  private readonly ANALOG_THRESHOLD = 0.3; // Threshold to convert analog to boolean
   private lastShootTime: number = 0;
   private shootCooldown: number = 250; // ms between shots (4 shots/second)
 
@@ -59,6 +68,9 @@ class Game {
     // Initialize UI
     this.ui = new UIManager();
     this.setupUIHandlers();
+
+    // Initialize mobile input
+    this.mobileInput = new MobileInputManager();
 
     // Show home screen initially
     this.ui.showScreen('home');
@@ -280,8 +292,37 @@ class Game {
     // Only send input during match
     if (this.room.state.phase !== GamePhase.IN_MATCH) return;
 
-    // Send current input state to server
+    // Merge keyboard and mobile input
+    this.mergeInputSources();
+
+    // Send current input state to server (hybrid payload)
     this.room.send('playerInput', this.inputState);
+  }
+
+  /**
+   * Merge keyboard and mobile input sources
+   */
+  private mergeInputSources(): void {
+    // Get mobile analog input
+    const mobileAnalog = this.mobileInput.getAnalogInput();
+
+    // If mobile controls are active, use analog values
+    if (this.mobileInput.isActive()) {
+      this.inputState.pitch = mobileAnalog.pitch;
+      this.inputState.roll = mobileAnalog.roll;
+      this.inputState.shoot = mobileAnalog.shoot;
+
+      // Derive legacy booleans from analog for server compatibility
+      this.inputState.up = mobileAnalog.pitch < -this.ANALOG_THRESHOLD;
+      this.inputState.down = mobileAnalog.pitch > this.ANALOG_THRESHOLD;
+      this.inputState.left = mobileAnalog.roll < -this.ANALOG_THRESHOLD;
+      this.inputState.right = mobileAnalog.roll > this.ANALOG_THRESHOLD;
+    } else {
+      // Use keyboard input - convert booleans to analog
+      this.inputState.pitch = (this.inputState.down ? 1 : 0) - (this.inputState.up ? 1 : 0);
+      this.inputState.roll = (this.inputState.right ? 1 : 0) - (this.inputState.left ? 1 : 0);
+      // shoot remains from keyboard
+    }
   }
 
   /**
