@@ -60,6 +60,30 @@ class Game {
       stencil: true,
     });
 
+    // Force initial resize to handle mobile address bar quirks
+    window.addEventListener('load', () => {
+      this.engine.resize();
+
+      // Additional check for mobile viewport height
+      const updateHeight = () => {
+        const vh = window.innerHeight * 0.01;
+        document.documentElement.style.setProperty('--vh', `${vh}px`);
+
+        // Also ensure canvas matches window size
+        if (canvas) {
+          canvas.width = window.innerWidth;
+          canvas.height = window.innerHeight;
+          this.engine.resize();
+        }
+      };
+
+      updateHeight();
+      window.addEventListener('resize', updateHeight);
+      window.addEventListener('orientationchange', () => {
+        setTimeout(updateHeight, 100); // Small delay for orientation to settle
+      });
+    });
+
     // Create scene
     this.scene = this.createScene();
 
