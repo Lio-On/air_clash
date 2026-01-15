@@ -12,6 +12,7 @@
   "dependencies": {
     "@air-clash/common": "*",
     "@babylonjs/core": "^6.39.0",
+    "@babylonjs/gui": "^6.49.0",
     "@babylonjs/loaders": "^6.39.0",
     "colyseus.js": "^0.15.0",
     "nipplejs": "^0.10.1"

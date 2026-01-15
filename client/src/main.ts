@@ -1,4 +1,5 @@
 import { Engine, Scene, HemisphericLight, DirectionalLight, Vector3, MeshBuilder, FreeCamera, FollowCamera, ArcRotateCamera, StandardMaterial, Color3, Color4, Mesh, Scalar, VertexData, ParticleSystem, Texture } from '@babylonjs/core';
+import * as GUI from '@babylonjs/gui';
 import { CONFIG, Team, GamePhase, getTerrainHeight, TERRAIN_CONFIG } from '@air-clash/common';
 import { clientConfig } from './config';
 import { UIManager } from './UIManager';
@@ -576,10 +577,10 @@ class Game {
   }
 
   /**
-   * Create airplane placeholder mesh
+   * Create airplane placeholder mesh with name tag
    */
-  private createAirplaneMesh(sessionId: string, team: Team): Mesh {
-    console.log(`🛠️  Creating airplane mesh for session ${sessionId}, team ${team}`);
+  private createAirplaneMesh(sessionId: string, team: Team, name: string): Mesh {
+    console.log(`🛠️  Creating airplane mesh for session ${sessionId}, team ${team}, name ${name}`);
 
     // Create parent mesh to hold all parts
     const airplane = new Mesh(`airplane-${sessionId}`, this.scene);
@@ -630,6 +631,35 @@ class Game {
 
     // Store team in metadata for updates
     airplane.metadata = { team: team };
+
+    // ===== CREATE NAME TAG (3D UI) =====
+    // Create a plane for the name tag positioned above the airplane
+    const nameTagPlane = MeshBuilder.CreatePlane(`nametag-${sessionId}`, {
+      width: 10,
+      height: 2.5
+    }, this.scene);
+    nameTagPlane.parent = airplane;
+    nameTagPlane.position.y = 5; // Position above the plane
+    nameTagPlane.billboardMode = Mesh.BILLBOARDMODE_ALL; // Always face camera
+
+    // Create GUI texture for the name tag
+    const advancedTexture = GUI.AdvancedDynamicTexture.CreateForMesh(
+      nameTagPlane,
+      1024,
+      256,
+      false
+    );
+    advancedTexture.hasAlpha = true;
+
+    // Create text block for player name
+    const nameText = new GUI.TextBlock();
+    nameText.text = name;
+    nameText.color = 'white';
+    nameText.fontSize = 140;
+    nameText.fontWeight = 'bold';
+    nameText.outlineWidth = 10;
+    nameText.outlineColor = 'black';
+    advancedTexture.addControl(nameText);
 
     return airplane;
   }
@@ -818,7 +848,7 @@ class Game {
 
       // Create mesh if it doesn't exist
       if (!mesh) {
-        mesh = this.createAirplaneMesh(sessionId, player.team);
+        mesh = this.createAirplaneMesh(sessionId, player.team, player.name);
         this.playerMeshes.set(sessionId, mesh);
         console.log(`✈️  Created mesh for ${player.name} (${player.team}) at session ${sessionId}`);
 
